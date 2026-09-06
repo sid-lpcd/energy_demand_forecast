@@ -43,6 +43,11 @@ used a second time (in another notebook, in evaluation, in a later week), it mov
 - **Weather is observed, not forecast**, in this project's data (see `PLAN.md` limitations). Don't
   present weather-augmented results as if they represent deployable production accuracy — they're
   an upper bound. Say so wherever the weather results are reported.
+- **Never subtract `wind`/`solar` from `demand` to build a "net demand" series.** They're embedded
+  (distribution-connected) generation, already invisibly netted into `demand` (`ND`) before NESO
+  ever measures it — confirmed via NESO's own FAQ for this dataset. Subtracting them again
+  double-counts the same effect. Use them as model features instead; see `PLAN.md` Week 7 for the
+  corrected framing.
 
 ## Testing
 

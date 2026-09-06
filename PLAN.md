@@ -1,6 +1,6 @@
 # Plan — Machine Learning for Probabilistic Short-Term Electricity Demand Forecasting in Great Britain
 
-Last updated: 2026-09-05
+Last updated: 2026-09-06
 
 ## Why this project
 
@@ -43,29 +43,69 @@ line.
 | UK bank holidays / school holidays | `holidays` Python package + manual list for school holidays | Demand drops sharply on bank holidays; worth encoding explicitly rather than hoping calendar features catch it. |
 | Balancing costs / imbalance prices (Week 8 impact estimate) | [Elexon BMRS](https://www.bmreports.com/) / NESO balancing costs data | Used only for a back-of-envelope impact estimate, not as a model input. |
 | Carbon intensity | [Carbon Intensity API (National Grid ESO)](https://carbonintensity.org.uk/) | Used for the Week 8 impact estimate — connects forecast error to plausible emissions impact. |
+| UK COVID-19 restriction periods (for a 3-level `lockdown_level` stress-test feature) | [Institute for Government, "Timeline of UK government coronavirus lockdowns and measures, March 2020 to December 2021"](https://www.instituteforgovernment.org.uk/data-visualisation/timeline-coronavirus-lockdowns), corroborated by [House of Commons Library, "Coronavirus: A history of English lockdown laws" (CBP-9068)](https://commonslibrary.parliament.uk/research-briefings/cbp-9068/) | England's national timeline used as a GB-wide proxy — devolved nations sometimes diverged (e.g. Wales' Oct 2020 "firebreak"); documented simplification, not modelled separately. See Week 1 for the exact date ranges. |
 
-**Known limitation to state explicitly (not to solve):** this project uses *observed* historical
-weather as a feature, but an operational forecaster only has *forecast* weather at lead time.
-Results here are therefore an upper bound on what weather features could contribute in production
-— call this out in the final report rather than presenting it as if it were deployable as-is.
+**Known limitations to state explicitly (not to solve):**
+
+- This project uses *observed* historical weather as a feature, but an operational forecaster only
+  has *forecast* weather at lead time. Results here are therefore an upper bound on what weather
+  features could contribute in production — call this out in the final report rather than
+  presenting it as if it were deployable as-is.
+- **Embedded wind/solar generation is already invisibly netted into the demand figures — it is not
+  a separate additive component.** Per NESO's own FAQ for this dataset: demand figures "are based
+  upon the Total Generation Output from Transmission contracted units only," and NESO "do[es] not
+  receive any metering from DNOs [Distribution Network Operators]." Rooftop solar and small/
+  distribution-connected wind reduce local consumption *before* it reaches transmission-metered
+  points, so `ND` is suppressed by embedded generation by physics, not by any subtraction NESO
+  performs — which is exactly why `EMBEDDED_WIND_GENERATION`/`EMBEDDED_SOLAR_GENERATION` exist as a
+  separate *modelled* (not metered) estimate. Practical consequence for this project: `wind` and
+  `solar` are used as **predictive features** (they explain real weather-driven dips in demand),
+  never subtracted from `demand` a second time — see Week 7 for what this changes.
 
 ## Week 1 — Data & Project Setup
 
 - Set up the repo (done): `src/edf` package, `tests/`, `data/{raw,processed}` (gitignored),
   `notebooks/`, `reports/`.
-- Write a small downloader (`src/edf/data/download.py`) that pulls NESO historic demand data for
-  2020–2025 into `data/raw/`, idempotent (skip if already downloaded).
-- Build a cleaned, canonical half-hourly (or hourly, pick one and be consistent) table with:
-  `timestamp` (UTC, tz-aware), `demand`, `wind`, `solar`, `interconnector`.
+- Downloader (done): `src/edf/data/download.py` pulls NESO historic demand data for 2020–2025 into
+  `data/raw/` and builds a combined raw parquet, idempotent (skip if already downloaded). Raw-data
+  exploration (done): `notebooks/01_explore_raw_data.ipynb`.
+- **Canonical column decisions (finalized):**
+  - `demand` = **ND** (National Demand), not TSD. TSD adds pump-storage pumping and station load
+    back in — pumping in particular is a discretionary, price-driven decision, not a
+    weather/calendar-driven demand signal, so including it would add noise the model has no
+    features to explain. TSD stays available in the raw table if needed later.
+  - `wind` = `EMBEDDED_WIND_GENERATION`, `solar` = `EMBEDDED_SOLAR_GENERATION` — used as **features**
+    of the demand model, not subtracted from `demand`. See the "known limitations" note above: this
+    embedded generation is already invisibly baked into `ND`, so subtracting it again would
+    double-count it and produce a number with no clean physical meaning.
+  - `interconnector` = sum of all `*_FLOW` columns (net GB import, +import/−export). Individual
+    links are highly collinear (all driven by the same GB-vs-Europe price differential); the raw
+    per-link columns remain available if link-specific analysis is ever needed.
+- Build the cleaned, canonical half-hourly table: `timestamp` (UTC, tz-aware), `demand`, `wind`,
+  `solar`, `interconnector`.
+- Add a `lockdown_level` calendar feature (`none` / `partial` / `full`) for the COVID-19 stress-test
+  work in Weeks 6/8, using England's national restriction timeline (Institute for Government,
+  corroborated by the House of Commons Library — see Data sources) as a GB-wide proxy:
+  - **`full`** (legal "stay at home" order in force): 2020-03-23 to 2020-05-12; 2020-11-05 to
+    2020-12-01; 2021-01-06 to 2021-03-28.
+  - **`partial`** (tiers / rule-of-six / exit-roadmap steps, no stay-at-home order):
+    2020-05-13 to 2020-09-13; 2020-09-14 to 2020-11-04; 2020-12-02 to 2021-01-05; 2021-03-29 to
+    2021-07-18.
+  - **`none`**: everything else (pre-2020-03-23, and from 2021-07-19 — "Freedom Day" — onward).
 - Handle: missing settlement periods, clock-change days (23/25-hour days), obvious sensor/reporting
-  outliers, unit consistency (MW throughout).
+  outliers, unit consistency (MW throughout). (Raw-data check already found zero gaps/duplicates/
+  negative values across 2020–2025 — see the exploration notebook — so this step may mostly be
+  confirming there's nothing left to do rather than fixing anything.)
 - Decide and document the train/validation/test split up front, e.g. train 2020–2023, validation
   2024, test 2025 — fixed for the rest of the project so no week accidentally peeks at test data.
+  (COVID's acute disruption falls entirely inside the training window under this split, so reported
+  val/test accuracy isn't distorted by it — see Week 6 for how the training-time COVID period is
+  still put to use.)
 - Plot: full time series, one winter week and one summer week zoomed in, and a demand-by-hour /
   demand-by-day-of-week seasonality plot.
-- **Deliverable:** `data/processed/gb_energy_2020_2025.parquet` + a data-quality notebook +
-  unit tests for the cleaning functions (missing-period handling, outlier rules, timezone
-  correctness).
+- **Deliverable:** `data/processed/gb_energy_2020_2025.parquet` (with `lockdown_level`) + a
+  data-quality notebook + unit tests for the cleaning functions (missing-period handling, outlier
+  rules, timezone correctness, `lockdown_level` date-range assignment).
 
 ## Week 2 — Baselines
 
@@ -128,25 +168,50 @@ Results here are therefore an upper bound on what weather features could contrib
 - The likely interesting finding: point accuracy may hold up reasonably on extreme days, but
   **calibration (PICP) is the one that tends to break down in the tails** — that mismatch, if you
   find it, is worth a dedicated paragraph in the final report.
-- **Deliverable:** per-bucket metrics table + commentary on where the model is least trustworthy.
+- **COVID lockdown stress test (retrospective, not a primary test-set metric):** since 2020–2021
+  falls inside the *training* window, not validation/test, this isn't a held-out accuracy number —
+  it's a qualitative case study. Using the `lockdown_level` feature from Week 1, pull the Week 2
+  baselines' and Week 3/5 model's retrospective predictions for `full` and `partial` days in
+  2020–2021 and compare against what actually happened. The expected finding: every method,
+  naive-baseline or ML, was blindsided by the initial demand collapse in March 2020 — no
+  calendar/lag feature could have anticipated a legally-mandated behavioural shock. That's a
+  genuinely useful, honest result: it shows *where forecasting has hard limits* regardless of model
+  sophistication, which is a stronger and more credible finding than only reporting wins.
+- **Deliverable:** per-bucket metrics table + commentary on where the model is least trustworthy,
+  plus a short write-up (with plots) of the COVID case study for use in Week 8.
 
 ## Week 7 — Renewable / Net Demand
 
-- Compute `net_demand = demand - wind - solar` and forecast it directly (net demand is what
-  dispatchable generation actually has to serve).
-- Compare net-demand forecast error against the demand-only forecast error, specifically during
-  high-renewable-share periods (the GB "duck curve" analogue — fast net-demand ramps around
-  sunset/sunrise or high-wind events).
-- Connect to a real operational question: **are the largest net-demand forecast errors concentrated
-  during periods that matter most for curtailment/balancing decisions?**
-- **Deliverable:** net-demand model + analysis of where/when errors concentrate relative to
-  renewable share.
+Originally planned as `net_demand = demand - wind - solar`. That's now known to be wrong for this
+dataset: `wind`/`solar` here are *embedded* generation, already invisibly netted into `demand`
+(`ND`) by physics before NESO ever sees it (see the Week 1 / Data sources note). Subtracting them
+again double-counts the same effect and produces a number without a clean physical meaning — it is
+**not** the GB analogue of the CAISO "duck curve" net-load concept.
+
+- Instead, treat high estimated embedded-renewable output as **extra variance already sitting
+  inside the `demand` series itself**, and test whether forecast error concentrates there: bucket
+  half-hours (or days) by `wind + solar` percentile and compare MAE/RMSE/MASE and pinball
+  loss/PICP across buckets, the same way Week 6 buckets by weather/calendar extremes.
+- Connect to a real operational question: **is the model measurably less accurate — or less
+  calibrated — during high-embedded-renewable periods**, i.e. exactly when weather-driven
+  generation is adding the most unobserved variability to the demand signal?
+- **Stretch, not core:** a literal GB duck-curve/net-demand analysis is possible, but needs
+  *transmission-scale* wind/solar generation (which does directly add to the generation mix serving
+  `ND`, unlike embedded generation) — that would mean pulling Elexon BMRS fuel-mix data, out of
+  scope for the core 8-week plan.
+- **Deliverable:** per-embedded-renewable-percentile error table + analysis of whether/where
+  accuracy or calibration degrades as embedded wind/solar output rises.
 
 ## Week 8 — Publish + Impact Estimate
 
 - GitHub repo: proper README, methodology, results, and an explicit **Limitations** section
-  (including the observed-vs-forecast-weather caveat from Week 1, and any others found along the
-  way).
+  (including the observed-vs-forecast-weather caveat, the embedded-generation-netting caveat, and
+  any others found along the way).
+- Include the Week 6 COVID lockdown case study as a short discussion section: a concrete, honest
+  illustration of a regime shock no forecasting approach could have anticipated, which pairs
+  naturally with the Week 5 calibration discussion (no realistically-sized P10/P90 interval "covers"
+  a once-in-a-generation demand shock — what matters operationally is fast model re-fitting once a
+  regime change is recognized, not pre-emptive coverage of it).
 - **Impact back-of-envelope (the EA-relevant part):** using Elexon/NESO balancing-cost data and the
   Carbon Intensity API, sketch a rough, clearly-caveated estimate of what a forecast-error
   reduction of the magnitude found in Weeks 3–5 could plausibly be worth — in £ of avoided
