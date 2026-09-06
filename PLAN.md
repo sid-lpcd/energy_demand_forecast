@@ -39,8 +39,8 @@ line.
 | Feature | Source | Notes |
 |---|---|---|
 | Demand, embedded wind/solar, interconnector flows | [NESO Data Portal](https://www.neso.energy/data-portal) — Historic Demand Data (half-hourly, 2009–present) | Free, no key. Confirm exact field names/units when downloading (ND vs TSD, embedded generation estimates vs metered). |
-| Weather (temperature, wind speed, cloud/irradiance) | [Open-Meteo Historical Weather API](https://open-meteo.com/) (free, no key) or ERA5 reanalysis via Copernicus CDS | Use a small set of GB population-weighted stations/grid points (e.g. London, Birmingham, Manchester, Glasgow, Leeds) rather than a single point — GB demand responds to population-weighted temperature, not one city's. |
-| UK bank holidays / school holidays | `holidays` Python package + manual list for school holidays | Demand drops sharply on bank holidays; worth encoding explicitly rather than hoping calendar features catch it. |
+| Weather — 3 independent sources (done, see Week 1) | [Open-Meteo Historical Weather API](https://open-meteo.com/) (ERA5 reanalysis, primary), [NASA POWER API](https://power.larc.nasa.gov/) (independent reanalysis, cross-check), [Open-Meteo Historical Forecast API](https://open-meteo.com/en/docs/historical-forecast-api) (archived real forecasts, **only valid from 2022-03-01** — verified empirically, see `src/edf/data/weather.py`) | All free/keyless. Population-weighted across London/Birmingham/Manchester/Glasgow/Leeds (ballpark conurbation-population proxy, not a full gridded weighting). Open-Meteo vs. NASA POWER temperature correlation 0.98 on the full 2020-2025 series — confirms the sources are genuinely independent yet agree, not redundant. |
+| UK bank holidays / school holidays / event calendar (done, see Week 1) | `holidays` Python package (verified to already include one-off dates — VE Day move, Platinum Jubilee, Queen's funeral, Coronation); hand-curated event table for school holidays, football/TV events, Olympics, Clap for Carers, solar eclipses in `src/edf/data/calendar_events.py` | Demand drops sharply on bank holidays; some GB demand spikes ("TV pickup") are driven by nationally-watched TV moments — see Week 1 for the full researched/sourced list and tiering. |
 | Balancing costs / imbalance prices (Week 8 impact estimate) | [Elexon BMRS](https://www.bmreports.com/) / NESO balancing costs data | Used only for a back-of-envelope impact estimate, not as a model input. |
 | Carbon intensity | [Carbon Intensity API (National Grid ESO)](https://carbonintensity.org.uk/) | Used for the Week 8 impact estimate — connects forecast error to plausible emissions impact. |
 | UK COVID-19 restriction periods (for a 3-level `lockdown_level` stress-test feature) | [Institute for Government, "Timeline of UK government coronavirus lockdowns and measures, March 2020 to December 2021"](https://www.instituteforgovernment.org.uk/data-visualisation/timeline-coronavirus-lockdowns), corroborated by [House of Commons Library, "Coronavirus: A history of English lockdown laws" (CBP-9068)](https://commonslibrary.parliament.uk/research-briefings/cbp-9068/) | England's national timeline used as a GB-wide proxy — devolved nations sometimes diverged (e.g. Wales' Oct 2020 "firebreak"); documented simplification, not modelled separately. See Week 1 for the exact date ranges. |
@@ -92,6 +92,36 @@ line.
     2020-05-13 to 2020-09-13; 2020-09-14 to 2020-11-04; 2020-12-02 to 2021-01-05; 2021-03-29 to
     2021-07-18.
   - **`none`**: everything else (pre-2020-03-23, and from 2021-07-19 — "Freedom Day" — onward).
+- **Calendar/event and weather feature datasets (done):** `src/edf/data/calendar_events.py` and
+  `src/edf/data/weather.py`, both tested (`tests/data/test_calendar_events.py`,
+  `tests/data/test_weather.py`) and run end-to-end against live sources.
+  - **Bank holidays**: England & Wales via the `holidays` package — verified it already includes
+    every one-off date needed (VE Day move, Jubilee, Queen's funeral, Coronation), no manual patch.
+  - **School holidays**: approximate England term-time windows (Christmas/half-terms fixed weeks,
+    Easter floating off Easter Sunday) — a stated approximation, not a per-LA calendar.
+  - **Tiered "TV pickup" events**: a hand-curated table of nationally-televised moments documented
+    by NESO to cause synchronised demand spikes (e.g. Euro 2020 England v Germany: NESO-recorded
+    ~1GW pickup at half-time, ~1.6GW at full-time — one of the largest events in UK grid history).
+    Tiers — **large**: all England international-tournament matches (Euro 2020, World Cup 2022,
+    Women's Euro 2022, Women's World Cup 2023) and all major domestic cup finals (FA Cup, EFL Cup,
+    Champions League Final); **medium**: the Olympics (Tokyo 2020, Paris 2024, as a date-range flag)
+    and "Clap for Carers" (NESO-documented ~800MW surge, Thursdays 20:00, 26 Mar–28 May 2020);
+    **small**: lower-reach or non-synchronised events kept for completeness (Ashes 2023, Rugby World
+    Cup 2023 — England didn't reach the final, Cricket World Cup 2023, boxing — subscription/PPV
+    not free-to-air, the 2024 General Election night — ~4.5M peak audience, an order of magnitude
+    below Euro 2020's ~30M). Excluded entirely: routine weekly Premier League/EFL fixtures (too
+    frequent, diffuse per-game effect, expensive to source reliably), Wimbledon (no British finalist
+    2020–2025), local/regional events, political/budget announcements.
+  - **Solar eclipses** (a *physical* driver of embedded solar generation, not a TV/behaviour
+    mechanism, so kept as its own `solar_eclipse_pct` column): 10 Jun 2021, 25 Oct 2022,
+    29 Mar 2025 — exact UK start/peak/end times and obscuration percentages sourced and verified.
+  - **Weather, 3 sources**: Open-Meteo Historical (ERA5, primary), NASA POWER (independent
+    cross-check — 0.98 temperature correlation with Open-Meteo on the full run, confirming the
+    sources agree while being genuinely different), and the Open-Meteo Historical Forecast API for
+    real archived forecasts. That last one needed a live check, not just documentation: empirically
+    verified by diffing it against the ERA5 endpoint that it silently returns identical
+    (fallen-back-to-reanalysis) values before **2022-03-01**, so it is only ever requested from that
+    date onward — guarded in code (`FORECAST_ARCHIVE_START`), not just noted in a comment.
 - Handle: missing settlement periods, clock-change days (23/25-hour days), obvious sensor/reporting
   outliers, unit consistency (MW throughout). (Raw-data check already found zero gaps/duplicates/
   negative values across 2020–2025 — see the exploration notebook — so this step may mostly be
@@ -133,17 +163,26 @@ line.
 
 ## Week 4 — Weather
 
-- Pull GB population-weighted temperature, wind speed, and cloud cover / irradiance for
-  2020–2025 from Open-Meteo/ERA5.
+- Weather data (done, Week 1): population-weighted temperature, wind speed, cloud cover, and
+  shortwave radiation from the 3 sources in `src/edf/data/weather.py`.
 - Add heating/cooling degree-day features (temperature is normally the single biggest external
   driver of demand).
-- Run an ablation: identical model/split with vs. without weather features. Report the % MAE/RMSE
+- Run an ablation: identical model/split with vs. without weather features, using the Open-Meteo
+  Historical (ERA5) series as the primary "observed weather" feature set. Report the % MAE/RMSE
   reduction, not just "it got better."
-- **This is the first real experiment — state the hypothesis before running it**: e.g. "weather
-  should reduce demand-forecast error more than wind/solar-forecast error, since wind/solar are
-  already directly observed in the target-adjacent NESO estimates." Then check if that's true.
-- **Deliverable:** ablation table + short experiment write-up (hypothesis, result, honest
-  interpretation — including if the effect is smaller than expected).
+- **A second, more honest ablation this project can actually run (most can't):** repeat the
+  comparison on the post-2022-03-01 slice using the Open-Meteo Historical *Forecast* Archive
+  (real archived forecast-model output, not reanalysis) instead of the ERA5 series. The gap between
+  the ERA5-based improvement and the real-forecast-based improvement is a direct, measured answer to
+  "how much of Week 4's gain survives contact with what a forecaster would actually have known at
+  lead time" — turning the Week 1 "weather is observed, not forecast" limitation into an honest
+  reported number for at least part of the window, rather than leaving it as an unaddressed caveat.
+- **State the hypothesis before running it**: e.g. "weather should reduce demand-forecast error more
+  than wind/solar-forecast error, since wind/solar are already directly observed in the
+  target-adjacent NESO estimates." Then check if that's true.
+- **Deliverable:** ablation table (ERA5 vs. real-forecast-archive, where the latter applies) + short
+  experiment write-up (hypothesis, result, honest interpretation — including if the effect is
+  smaller than expected, or smaller still once real forecasts replace reanalysis).
 
 ## Week 5 — Probabilistic Forecasting
 
@@ -227,6 +266,6 @@ again double-counts the same effect and produces a number without a clean physic
 
 - Compare LightGBM quantile regression against a distributional alternative (e.g. NGBoost or a
   simple Gaussian-process/conformal-prediction baseline) for calibration robustness.
-- Swap in real historical weather *forecasts* (if a source can be found) instead of observed
-  weather, to get a realistic-deployment error estimate rather than an upper bound.
+- A literal GB "duck curve" analysis using transmission-scale wind/solar generation (Elexon BMRS
+  fuel mix), per the Week 7 note — embedded generation alone can't reconstruct it.
 - A tiny Streamlit/FastAPI demo that serves a live P10/P50/P90 forecast.

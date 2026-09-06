@@ -8,7 +8,8 @@ update it as phases complete.
 ## Stack
 
 - Python (managed with `uv`), package layout under `src/edf/`.
-- Core libs: pandas, numpy, lightgbm, scikit-learn, matplotlib, requests, holidays, pyarrow.
+- Core libs: pandas, numpy, lightgbm, scikit-learn, matplotlib, requests, holidays, pyarrow,
+  python-dateutil.
 - Tests: pytest, under `tests/`, mirroring `src/edf/` structure.
 - Lint: ruff.
 
@@ -48,6 +49,11 @@ used a second time (in another notebook, in evaluation, in a later week), it mov
   ever measures it — confirmed via NESO's own FAQ for this dataset. Subtracting them again
   double-counts the same effect. Use them as model features instead; see `PLAN.md` Week 7 for the
   corrected framing.
+- **The Open-Meteo Historical Forecast API silently returns ERA5 reanalysis values (not real
+  archived forecasts) before 2022-03-01** — verified empirically by diffing it against the ERA5
+  endpoint, not assumed from documentation. `src/edf/data/weather.py` guards this with
+  `FORECAST_ARCHIVE_START`; never call that fetcher with an earlier start date, and don't relax the
+  guard without re-verifying against the live API first.
 
 ## Testing
 
@@ -62,9 +68,13 @@ MASE/pinball loss — easy to get subtly wrong), and the walk-forward split gene
 - Nothing under `data/` is committed (see `.gitignore`). If a dataset is small enough to be worth
   version-controlling as a fixture for tests, put a tiny sample under `tests/fixtures/`, not in
   `data/`.
-- No API keys should be needed for the primary data sources (NESO, Open-Meteo, Carbon Intensity API
-  are all free/keyless). If a source later requires a key, it goes in a local `.env` (gitignored),
-  never hardcoded.
+- No API keys should be needed for the primary data sources (NESO, Open-Meteo, NASA POWER, Carbon
+  Intensity API are all free/keyless). If a source later requires a key, it goes in a local `.env`
+  (gitignored), never hardcoded.
+- `src/edf/data/calendar_events.py`'s event table (bank/school holidays, football/TV events,
+  Olympics, Clap for Carers, solar eclipses) is deliberately hand-curated, not scraped/API-fetched —
+  the event count is small and stable (historical facts don't change), so a small verified table is
+  more reliable than a scraper. Extend it the same way: research + cite, don't automate the lookup.
 
 ## Interaction style
 
