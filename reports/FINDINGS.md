@@ -11,10 +11,21 @@ produces a real result, not every intermediate exploration step. See `PLAN.md` f
   caring about most (see §2).
 - ND declined ~3.7% from 2020 to 2025, but a "true demand" proxy (`ND + embedded wind + embedded
   solar`, reconstructing what ND is hiding — see `PLAN.md`'s embedded-generation note) declined only
-  ~1.2% over the same period, while embedded wind+solar capacity grew ~39%. **Roughly two-thirds of
-  the apparent ND decline is a growing-renewables visibility artifact, not real demand reduction** —
-  though a genuine ~1.2% underlying decline remains, not yet explained (not weather-normalized).
-  Source: `notebooks/01_explore_raw_data.ipynb`.
+  ~1.2% over the same period. **Roughly two-thirds of the apparent ND decline is a growing-embedded
+  -generation visibility artifact, not real demand reduction** — though a genuine ~1.2% underlying
+  decline remains, not yet explained (not weather-normalized). Verified the arithmetic holds exactly
+  at the row level (`true_demand_proxy − (ND + wind_gen + solar_gen)` = 0 for every half-hour), not
+  just approximately at the annual aggregate.
+- **This is almost entirely a solar story, not a wind one** — worth being precise about, since
+  "wind+solar capacity grew ~39%" (an earlier, blurrier framing) obscures that wind and solar moved
+  in opposite directions. 2020→2025: wind capacity +1.4% (6,515→6,606 MW) while wind *generation*
+  **fell** ~6% (2,077→1,951 MW, capacity factor 31.9%→29.5%) — most plausibly 2025 was simply a
+  less windy year on average, a weather-variability effect, not a capacity one. Solar capacity grew
+  **+57.8%** (13,188→20,813 MW) and solar generation grew almost exactly in proportion (+55.1%,
+  1,374→2,130 MW, capacity factor flat at ~10%) — a clean, capacity-driven trend. Capacity and
+  generation are different scales (capacity factor ~10-32%, nowhere near 100%) and shouldn't be
+  compared directly — a real correction made after a user question caught the first draft
+  conflating them. Source: `notebooks/01_explore_raw_data.ipynb`.
 - 2021 was the highest-demand year in both ND and the true-demand proxy — plausibly a colder winter
   rather than a COVID-rebound effect (lockdown 3 was still running through Q1 2021). Not yet checked
   against weather data.
