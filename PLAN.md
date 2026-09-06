@@ -39,18 +39,39 @@ line.
 | Feature | Source | Notes |
 |---|---|---|
 | Demand, embedded wind/solar, interconnector flows | [NESO Data Portal](https://www.neso.energy/data-portal) — Historic Demand Data (half-hourly, 2009–present) | Free, no key. Confirm exact field names/units when downloading (ND vs TSD, embedded generation estimates vs metered). |
-| Weather — 3 independent sources (done, see Week 1) | [Open-Meteo Historical Weather API](https://open-meteo.com/) (ERA5 reanalysis, primary), [NASA POWER API](https://power.larc.nasa.gov/) (independent reanalysis, cross-check), [Open-Meteo Historical Forecast API](https://open-meteo.com/en/docs/historical-forecast-api) (archived real forecasts, **only valid from 2022-03-01** — verified empirically, see `src/edf/data/weather.py`) | All free/keyless. Population-weighted across London/Birmingham/Manchester/Glasgow/Leeds (ballpark conurbation-population proxy, not a full gridded weighting). Open-Meteo vs. NASA POWER temperature correlation 0.98 on the full 2020-2025 series — confirms the sources are genuinely independent yet agree, not redundant. |
-| UK bank holidays / school holidays / event calendar (done, see Week 1) | `holidays` Python package (verified to already include one-off dates — VE Day move, Platinum Jubilee, Queen's funeral, Coronation); hand-curated event table for school holidays, football/TV events, Olympics, Clap for Carers, solar eclipses in `src/edf/data/calendar_events.py` | Demand drops sharply on bank holidays; some GB demand spikes ("TV pickup") are driven by nationally-watched TV moments — see Week 1 for the full researched/sourced list and tiering. |
+| Weather — 4 independent sources (done, see Week 1) | [Open-Meteo Historical Weather API](https://open-meteo.com/) (ERA5 reanalysis, primary, never available ahead of time by design), [NASA POWER API](https://power.larc.nasa.gov/) (independent reanalysis, cross-check), [Open-Meteo Historical Forecast API](https://open-meteo.com/en/docs/historical-forecast-api) (a **short-lead nowcast archive, NOT a day-ahead forecast** — corrected 2026-09-06, see Week 1 — valid from 2022-03-01, verified empirically), [Open-Meteo Previous Runs API](https://open-meteo.com/en/docs/previous-runs-api) `_previous_day1` (**genuine ~24h-ahead forecast**, valid from 2024-03-07, verified empirically per-variable) | All free/keyless. Population-weighted across London/Birmingham/Manchester/Glasgow/Leeds (ballpark conurbation-population proxy, not a full gridded weighting). Open-Meteo vs. NASA POWER temperature correlation 0.98 on the full 2020-2025 series — confirms the sources are genuinely independent yet agree, not redundant. |
+| NESO's own day-ahead demand forecast (done, see Week 1) | [NESO Data Portal, "Day Ahead Demand Forecast"](https://www.neso.energy/data-portal/1-day-ahead-demand-forecast) — "Historic Day Ahead Demand Forecasts" resource, 2018–present | A genuine deployed operational forecast, not an ML estimate — used as a benchmark ("does our model beat what NESO actually forecast?"), not a model input. ~12 "cardinal points"/day (overnight minimum, peaks, etc.), not full half-hourly resolution. See `src/edf/data/demand_forecast_benchmark.py`. |
+| UK bank holidays / school holidays / event calendar (done, see Week 1) | `holidays` Python package (verified to already include one-off dates — VE Day move, Platinum Jubilee, Queen's funeral, Coronation); hand-curated event table for school holidays, football/TV events, Olympics, Clap for Carers, solar eclipses in `src/edf/data/calendar_events.py` | Demand drops sharply on bank holidays; some GB demand spikes ("TV pickup") are driven by nationally-watched TV moments — see Week 1 for the full researched/sourced list and tiering, and for why a measured TV-audience dataset isn't used here. |
 | Balancing costs / imbalance prices (Week 8 impact estimate) | [Elexon BMRS](https://www.bmreports.com/) / NESO balancing costs data | Used only for a back-of-envelope impact estimate, not as a model input. |
 | Carbon intensity | [Carbon Intensity API (National Grid ESO)](https://carbonintensity.org.uk/) | Used for the Week 8 impact estimate — connects forecast error to plausible emissions impact. |
 | UK COVID-19 restriction periods (for a 3-level `lockdown_level` stress-test feature) | [Institute for Government, "Timeline of UK government coronavirus lockdowns and measures, March 2020 to December 2021"](https://www.instituteforgovernment.org.uk/data-visualisation/timeline-coronavirus-lockdowns), corroborated by [House of Commons Library, "Coronavirus: A history of English lockdown laws" (CBP-9068)](https://commonslibrary.parliament.uk/research-briefings/cbp-9068/) | England's national timeline used as a GB-wide proxy — devolved nations sometimes diverged (e.g. Wales' Oct 2020 "firebreak"); documented simplification, not modelled separately. See Week 1 for the exact date ranges. |
 
-**Known limitations to state explicitly (not to solve):**
+**Known limitations to state explicitly (not to solve — except the first, see Week 4b):**
 
-- This project uses *observed* historical weather as a feature, but an operational forecaster only
-  has *forecast* weather at lead time. Results here are therefore an upper bound on what weather
-  features could contribute in production — call this out in the final report rather than
-  presenting it as if it were deployable as-is.
+- **`wind`, `solar`, and `interconnector` (as currently used in Weeks 1-3) are same-period actuals,
+  not anything available ahead of time.** Checked directly (2026-09-06): NESO's own "Demand Data
+  Update" dataset does publish a 7-day-ahead embedded wind/solar forecast, but it's a **rolling
+  window only** (last month + next 7 days, continuously overwritten) — NESO does not retain a
+  historical archive of what that forecast said on any past date, and nobody scraped it in real
+  time for 2020-2025. So unlike weather, there is no free historical forecast archive for these at
+  all, not even a mischaracterized one. **Week 4b below fixes this** by forecasting wind/solar
+  ourselves from weather and only using *those* forecasts as demand-model features; interconnector
+  flow is harder (price/economics-driven, not just weather-driven) and is more likely to end up
+  documented as an unfixed limitation than actually solved — see Week 4b.
+- This project uses *observed* historical weather as a feature (for `wind`/`solar`'s inputs and
+  directly in Week 4), but a real operational forecaster only has *forecast* weather at lead time.
+  The 4th weather source (Open-Meteo Previous Runs API, genuine day-ahead) fixes this for the
+  2024-03-07-onward slice; before that, results are an upper bound — call this out in the final
+  report rather than presenting it as if it were deployable as-is for the full 2020-2025 window.
+- **No freely-available, systematically-collected TV-audience dataset exists for this project's
+  window.** Checked directly (2026-09-06): BARB (the official UK measurement body) publishes daily
+  "overnight" ratings, but only to industry subscribers; its free public site only offers weekly
+  top-30/50 *aggregate* charts (browse-by-week, no bulk historical export found). This isn't a
+  forecast-availability problem the way wind/solar is — football/TV event *scheduling* is known
+  months ahead, so there's no leakage risk — it just means the event-tier labels in
+  `calendar_events.py` are a researched qualitative judgement (cross-checked against one hard NESO
+  MW figure for Euro 2020), not a continuously measured variable. Good enough to use as a categorical
+  feature; not something to overstate as precise.
 - **Embedded wind/solar generation is already invisibly netted into the demand figures — it is not
   a separate additive component.** Per NESO's own FAQ for this dataset: demand figures "are based
   upon the Total Generation Output from Transmission contracted units only," and NESO "do[es] not
@@ -115,13 +136,23 @@ line.
   - **Solar eclipses** (a *physical* driver of embedded solar generation, not a TV/behaviour
     mechanism, so kept as its own `solar_eclipse_pct` column): 10 Jun 2021, 25 Oct 2022,
     29 Mar 2025 — exact UK start/peak/end times and obscuration percentages sourced and verified.
-  - **Weather, 3 sources**: Open-Meteo Historical (ERA5, primary), NASA POWER (independent
+  - **Weather, 4 sources**: Open-Meteo Historical (ERA5, primary), NASA POWER (independent
     cross-check — 0.98 temperature correlation with Open-Meteo on the full run, confirming the
-    sources agree while being genuinely different), and the Open-Meteo Historical Forecast API for
-    real archived forecasts. That last one needed a live check, not just documentation: empirically
-    verified by diffing it against the ERA5 endpoint that it silently returns identical
-    (fallen-back-to-reanalysis) values before **2022-03-01**, so it is only ever requested from that
-    date onward — guarded in code (`FORECAST_ARCHIVE_START`), not just noted in a comment.
+    sources agree while being genuinely different), the Open-Meteo Historical Forecast API (a
+    short-lead **nowcast** archive, valid from 2022-03-01), and the Open-Meteo Previous Runs API
+    `_previous_day1` (a genuine **day-ahead** forecast, valid from 2024-03-07). Both cutovers needed
+    a live check, not just documentation — and the correction mattered: the Historical Forecast API
+    was originally (wrongly) described here as "archived real forecasts"; its own docs actually say
+    it "stitches together the first few hours of each model run" (a nowcast, ~0-3h lead, not
+    day-ahead). Both start dates were empirically verified by diffing/checking the live APIs (not
+    assumed from documentation) and are guarded in code (`NOWCAST_ARCHIVE_START`,
+    `DAY_AHEAD_ARCHIVE_START` in `src/edf/data/weather.py`) — the day-ahead cutover in particular
+    needed per-variable checking, since `shortwave_radiation_previous_day1` starts a month later
+    (2024-03-07) than `temperature_2m_previous_day1` (2024-02-04); the later of the two is used so
+    the resulting dataset has zero nulls.
+  - **NESO's own day-ahead demand forecast** (`src/edf/data/demand_forecast_benchmark.py`): a real
+    2018-present archive of NESO's deployed day-ahead forecast, ~12 "cardinal points"/day (not full
+    half-hourly). Kept as a benchmark ("does our model beat the real one?"), not a model input.
 - Handle: missing settlement periods, clock-change days (23/25-hour days), obvious sensor/reporting
   outliers, unit consistency (MW throughout). (Raw-data check already found zero gaps/duplicates/
   negative values across 2020–2025 — see the exploration notebook — so this step may mostly be
@@ -164,25 +195,74 @@ line.
 ## Week 4 — Weather
 
 - Weather data (done, Week 1): population-weighted temperature, wind speed, cloud cover, and
-  shortwave radiation from the 3 sources in `src/edf/data/weather.py`.
+  shortwave radiation from the 4 sources in `src/edf/data/weather.py`.
 - Add heating/cooling degree-day features (temperature is normally the single biggest external
   driver of demand).
 - Run an ablation: identical model/split with vs. without weather features, using the Open-Meteo
   Historical (ERA5) series as the primary "observed weather" feature set. Report the % MAE/RMSE
   reduction, not just "it got better."
 - **A second, more honest ablation this project can actually run (most can't):** repeat the
-  comparison on the post-2022-03-01 slice using the Open-Meteo Historical *Forecast* Archive
-  (real archived forecast-model output, not reanalysis) instead of the ERA5 series. The gap between
-  the ERA5-based improvement and the real-forecast-based improvement is a direct, measured answer to
-  "how much of Week 4's gain survives contact with what a forecaster would actually have known at
-  lead time" — turning the Week 1 "weather is observed, not forecast" limitation into an honest
-  reported number for at least part of the window, rather than leaving it as an unaddressed caveat.
+  comparison on the 2024-03-07-onward slice using the Open-Meteo **Previous Runs API** (`_previous_day1`
+  — a genuine ~24h-ahead forecast, not reanalysis) instead of the ERA5 series. (Corrected 2026-09-06:
+  the Historical Forecast API is *not* this — its own docs say it "stitches together the first few
+  hours of each model run," making it a short-lead nowcast, not a day-ahead forecast; it's kept as a
+  4th, separately-labelled source, but the day-ahead comparison uses the Previous Runs API only.) The
+  gap between the ERA5-based improvement and the real-day-ahead-based improvement is a direct,
+  measured answer to "how much of Week 4's gain survives contact with what a forecaster would
+  actually have known at lead time" — turning the Week 1 "weather is observed, not forecast"
+  limitation into an honest reported number for the 2024-03-07-onward slice, rather than leaving it
+  as an unaddressed caveat.
 - **State the hypothesis before running it**: e.g. "weather should reduce demand-forecast error more
   than wind/solar-forecast error, since wind/solar are already directly observed in the
   target-adjacent NESO estimates." Then check if that's true.
-- **Deliverable:** ablation table (ERA5 vs. real-forecast-archive, where the latter applies) + short
+- **Deliverable:** ablation table (ERA5 vs. genuine day-ahead, where the latter applies) + short
   experiment write-up (hypothesis, result, honest interpretation — including if the effect is
   smaller than expected, or smaller still once real forecasts replace reanalysis).
+
+## Week 4b — Forecasting the Inputs (fixes the wind/solar/interconnector leakage)
+
+Motivated by a real gap found 2026-09-06: `wind`/`solar`/`interconnector` are used as demand-model
+features, but historically they're only available as same-period *actuals* — no free historical
+forecast archive exists for them (unlike weather). The fix is to **forecast them ourselves** from
+data that genuinely is available ahead of time, and feed *those* forecasts into the demand model
+instead of the outturn values — this is also simply how a real operational forecasting pipeline
+would be built (chained/cascaded forecasts), not a project-specific workaround.
+
+- **Wind**: generation is a strongly nonlinear (roughly cubic below rated wind speed, flat at rated
+  power, then a hard cutoff at very high wind speed) function of wind speed. Model
+  **capacity factor** (`EMBEDDED_WIND_GENERATION / EMBEDDED_WIND_CAPACITY`), not raw MW — capacity
+  grows steadily over 2020-2025 as new wind farms connect, and that trend has nothing to do with
+  whether it was windy, so predicting raw MW directly would conflate the two. Train
+  `capacity_factor ~ f(day-ahead wind speed forecast, calendar)`, then
+  `wind_forecast = predicted_capacity_factor × capacity` (capacity itself is slow-moving and safe to
+  take as known — it's public information about connected generation, not something requiring a
+  forecast).
+- **Solar**: same idea, but solar has a strong deterministic ceiling from solar geometry (zero at
+  night, a hard maximum set by time of day/year and solar elevation angle, regardless of weather) on
+  top of the weather-driven component (cloud cover, irradiance forecast). This ceiling makes solar
+  generally *more* predictable than wind given a forecast. Model
+  `capacity_factor ~ f(day-ahead shortwave radiation forecast, cloud cover forecast, solar elevation
+  angle)`, then multiply by `EMBEDDED_SOLAR_CAPACITY`.
+- **Interconnector flow is the hard one, and likely stays a stated limitation rather than a solved
+  problem.** Flow is driven mainly by cross-border *price* differentials (GB vs. France/Netherlands/
+  Norway/Ireland generation costs, carbon prices, scheduled link maintenance) — a multi-country
+  energy-economics problem, not primarily a weather one, so the wind/solar approach doesn't transfer.
+  The better fix isn't modelling it from scratch: **ENTSO-E's Transparency Platform publishes
+  real day-ahead *scheduled* cross-border commercial exchanges**, which would be a far more accurate
+  day-ahead interconnector feature than anything built here — flagged as a possible future data
+  source, not committed to, since ENTSO-E access needs a (free) registration and is a new API surface
+  to integrate. If not pursued, use a seasonal-naive interconnector forecast and say so plainly in
+  the limitations — interconnector flow is a smaller contributor to demand variance than temperature
+  or wind/solar, so a weaker feature here is a lower-cost simplification than it would be elsewhere.
+- **Evaluation**: this is a forecasting sub-problem in its own right — evaluate the wind/solar
+  capacity-factor models with their own MAE/RMSE against a seasonal-naive capacity-factor baseline,
+  *before* plugging them into the demand model. Then rerun the Week 3/4 demand model with
+  self-forecasted wind/solar (and interconnector, however handled) instead of outturn values, on the
+  2024-03-07-onward slice where a genuine day-ahead weather forecast exists to drive it, and compare
+  against the outturn-based (leaky, upper-bound) version.
+- **Deliverable:** wind/solar capacity-factor forecast models + their own accuracy metrics, plus a
+  demand-model comparison table: outturn-based features (upper bound) vs. self-forecasted features
+  (realistic), with the interconnector-handling choice stated explicitly either way.
 
 ## Week 5 — Probabilistic Forecasting
 

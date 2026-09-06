@@ -1,17 +1,33 @@
-"""GB weather data from three independent, free, keyless sources.
+"""GB weather data from four independent, free, keyless sources.
 
 1. **Open-Meteo Historical Weather API** (ERA5/ERA5-Land reanalysis) —
-   primary source, full 2020-2025 coverage.
+   primary source, full 2020-2025 coverage. Never available ahead of time in
+   reality (reanalysis is finalized well after the fact by design).
 2. **NASA POWER API** — independent reanalysis (CERES/GMAO), used to
    cross-check Open-Meteo's numbers and as an alternative solar-radiation
-   source.
-3. **Open-Meteo Historical Forecast API** — *archived forecast-model output*,
-   not reanalysis. Empirically verified (2026-09-06, by diffing this endpoint
-   against source #1) that it silently falls back to identical ERA5 values
-   before 2022-03-01 — it is only ever requested from that date onward, so it
-   never masquerades as forecast data when it secretly isn't. This is what
-   lets Week 4 test realistic forecast-based accuracy, not just the
-   observed-weather upper bound, for the latter part of the window.
+   source. Same "never ahead of time" caveat as #1.
+3. **Open-Meteo Historical Forecast API** — a **short-lead nowcast archive**,
+   NOT a day-ahead forecast. (Corrected 2026-09-06: earlier docs here wrongly
+   called this "archived forecasts". Its own documentation says it "stitches
+   together the first few hours of each model run" — a continuous nowcast,
+   typically ~0-3h lead, not a fixed lead time. It's still more honest than
+   ERA5 hindsight since a real model run couldn't see the future, but it does
+   not represent a deployable day-ahead forecast.) Empirically verified
+   (2026-09-06, by diffing against source #1) that it silently falls back to
+   identical ERA5 values before 2022-03-01 — only ever requested from that
+   date onward.
+4. **Open-Meteo Previous Runs API** — genuine **fixed lead-time** forecasts
+   (`_previous_day1` = the forecast issued ~24h before the target hour, i.e.
+   an actual day-ahead forecast). Empirically verified (2026-09-06) that each
+   variable has its own archive-start date, all-null before it — temperature
+   from 2024-02-04, but `shortwave_radiation_previous_day1` only from
+   **2024-03-07**. `DAY_AHEAD_ARCHIVE_START` uses the latest (strictest) of
+   the four so the resulting dataset has zero nulls rather than a
+   variable-dependent partial-null window. This is the one source that lets
+   Week 4 test *real* deployable forecast-based accuracy, for the
+   2024-03-07-onward slice.
+
+All four are free and require no API key.
 
 Weather is aggregated across a small set of GB population centres into one
 population-weighted GB series per source — a coarse proxy using ballpark
@@ -29,7 +45,8 @@ from typing import NamedTuple
 import pandas as pd
 import requests
 
-FORECAST_ARCHIVE_START = pd.Timestamp("2022-03-01", tz="UTC")
+NOWCAST_ARCHIVE_START = pd.Timestamp("2022-03-01", tz="UTC")
+DAY_AHEAD_ARCHIVE_START = pd.Timestamp("2024-03-07", tz="UTC")  # latest of the 4 variables' cutovers
 
 
 class City(NamedTuple):
@@ -110,12 +127,15 @@ def fetch_nasa_power(lat: float, lon: float, start: str, end: str) -> pd.DataFra
     ).sort_values("timestamp").reset_index(drop=True)
 
 
-def fetch_open_meteo_forecast_archive(lat: float, lon: float, start: str, end: str) -> pd.DataFrame:
-    """Archived forecast-model output. Only valid from FORECAST_ARCHIVE_START."""
-    if pd.Timestamp(start, tz="UTC") < FORECAST_ARCHIVE_START:
+def fetch_open_meteo_nowcast_archive(lat: float, lon: float, start: str, end: str) -> pd.DataFrame:
+    """Short-lead (~0-3h) nowcast archive. NOT a day-ahead forecast — see module docstring.
+
+    Only valid from NOWCAST_ARCHIVE_START (silently falls back to ERA5 before that).
+    """
+    if pd.Timestamp(start, tz="UTC") < NOWCAST_ARCHIVE_START:
         raise ValueError(
-            f"Historical Forecast API has no genuine forecast data before "
-            f"{FORECAST_ARCHIVE_START.date()} (verified empirically — it silently "
+            f"Historical Forecast API has no genuine nowcast data before "
+            f"{NOWCAST_ARCHIVE_START.date()} (verified empirically — it silently "
             f"falls back to ERA5 reanalysis before that date). Requested start={start}."
         )
     resp = requests.get(
@@ -144,10 +164,58 @@ def fetch_open_meteo_forecast_archive(lat: float, lon: float, start: str, end: s
     )
 
 
+def fetch_open_meteo_day_ahead(lat: float, lon: float, start: str, end: str) -> pd.DataFrame:
+    """Genuine ~24h-ahead forecast (Previous Runs API, `_previous_day1`).
+
+    Only valid from DAY_AHEAD_ARCHIVE_START (all-null before that, verified empirically).
+    """
+    if pd.Timestamp(start, tz="UTC") < DAY_AHEAD_ARCHIVE_START:
+        raise ValueError(
+            f"Previous Runs API day-1 data is null before {DAY_AHEAD_ARCHIVE_START.date()} "
+            f"(verified empirically). Requested start={start}."
+        )
+    variables = [
+        "temperature_2m_previous_day1",
+        "wind_speed_10m_previous_day1",
+        "cloud_cover_previous_day1",
+        "shortwave_radiation_previous_day1",
+    ]
+    resp = requests.get(
+        "https://previous-runs-api.open-meteo.com/v1/forecast",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": start,
+            "end_date": end,
+            "hourly": ",".join(variables),
+            "wind_speed_unit": "ms",
+            "timezone": "UTC",
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    h = resp.json()["hourly"]
+    return pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(h["time"], utc=True),
+            "temperature_c": h["temperature_2m_previous_day1"],
+            "wind_speed_ms": h["wind_speed_10m_previous_day1"],
+            "cloud_cover_pct": h["cloud_cover_previous_day1"],
+            "shortwave_radiation_wm2": h["shortwave_radiation_previous_day1"],
+        }
+    )
+
+
 _FETCHERS = {
     "open_meteo_historical": fetch_open_meteo_historical,
     "nasa_power": fetch_nasa_power,
-    "open_meteo_forecast_archive": fetch_open_meteo_forecast_archive,
+    "open_meteo_nowcast_archive": fetch_open_meteo_nowcast_archive,
+    "open_meteo_day_ahead": fetch_open_meteo_day_ahead,
+}
+
+_MIN_START = {
+    "open_meteo_nowcast_archive": NOWCAST_ARCHIVE_START,
+    "open_meteo_day_ahead": DAY_AHEAD_ARCHIVE_START,
 }
 
 
@@ -186,15 +254,16 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=Path("data/raw/weather"))
     parser.add_argument(
         "--sources", nargs="+", default=["open_meteo_historical", "nasa_power"],
-        help="open_meteo_historical, nasa_power, open_meteo_forecast_archive "
-        "(the latter is clipped to >= 2022-03-01 automatically if requested with an earlier start)",
+        help=f"one or more of {list(_FETCHERS)} "
+        "(sources with a verified minimum start date are clipped to it automatically)",
     )
     args = parser.parse_args()
 
     for source in args.sources:
         start = args.start
-        if source == "open_meteo_forecast_archive" and pd.Timestamp(start, tz="UTC") < FORECAST_ARCHIVE_START:
-            start = str(FORECAST_ARCHIVE_START.date())
+        min_start = _MIN_START.get(source)
+        if min_start is not None and pd.Timestamp(start, tz="UTC") < min_start:
+            start = str(min_start.date())
         out_path = build_source_parquet(source, start, args.end, args.out_dir)
         print(f"Wrote {out_path}")
 

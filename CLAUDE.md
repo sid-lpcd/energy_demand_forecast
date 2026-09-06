@@ -49,11 +49,22 @@ used a second time (in another notebook, in evaluation, in a later week), it mov
   ever measures it — confirmed via NESO's own FAQ for this dataset. Subtracting them again
   double-counts the same effect. Use them as model features instead; see `PLAN.md` Week 7 for the
   corrected framing.
-- **The Open-Meteo Historical Forecast API silently returns ERA5 reanalysis values (not real
-  archived forecasts) before 2022-03-01** — verified empirically by diffing it against the ERA5
-  endpoint, not assumed from documentation. `src/edf/data/weather.py` guards this with
-  `FORECAST_ARCHIVE_START`; never call that fetcher with an earlier start date, and don't relax the
-  guard without re-verifying against the live API first.
+- **The Open-Meteo "Historical Forecast API" is a short-lead nowcast (~0-3h), not a day-ahead
+  forecast** — its own docs say it stitches together the first few hours of each model run. Don't
+  call it a "forecast" without that qualifier; for anything claiming day-ahead accuracy, use
+  `fetch_open_meteo_day_ahead` (Previous Runs API, `_previous_day1`) instead.
+- **Two verified-empirically date guards in `src/edf/data/weather.py`, both regression-tested —
+  don't relax either without re-checking the live API first:**
+  `NOWCAST_ARCHIVE_START` (2022-03-01: before this, the nowcast endpoint silently returns identical
+  ERA5 values, not real short-lead output) and `DAY_AHEAD_ARCHIVE_START` (2024-03-07: before this,
+  `_previous_day1` values are null for at least one variable — `shortwave_radiation_previous_day1`
+  starts a month later than `temperature_2m_previous_day1`, so the later date is used everywhere).
+- **`wind`/`solar`/`interconnector` are same-period actuals, not available ahead of time in
+  deployment, and there is no free historical forecast archive for them** (checked: NESO's own
+  7-day-ahead embedded wind/solar forecast is a rolling window with no retained history). Don't use
+  them as demand-model features and call the result "deployable" — see `PLAN.md` Week 4b for the
+  fix (forecast wind/solar from weather via capacity factor; interconnector is harder and likely
+  stays a stated limitation).
 
 ## Testing
 
