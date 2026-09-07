@@ -492,16 +492,41 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
 
 ## Week 5 — Probabilistic Forecasting
 
-- Train LightGBM with the `quantile` objective at α = 0.1, 0.5, 0.9 to produce P10/P50/P90.
-- Evaluate calibration properly, not just point accuracy:
-  - **Pinball loss** per quantile.
-  - **PICP** (prediction interval coverage probability) — the fraction of actuals falling inside
-    [P10, P90] should be ~80%; report the actual number.
-  - A reliability diagram (nominal vs. observed coverage).
-  - Interval sharpness (P90–P10 width) — a wide-but-well-calibrated interval is less useful than a
-    narrow-and-well-calibrated one, so report both.
-- **Deliverable:** calibration plots + a plain statement of whether the model is over- or
-  under-confident, and where.
+- **Done, `notebooks/12_probabilistic_forecasting.ipynb`:** LightGBM `quantile` objective at
+  `1d` horizon, same feature set as Week 4's weather-on(ERA5) model. Hyperparameters tuned once
+  via walk-forward CV at α = 0.5 (pinball loss at 0.5 is exactly `0.5 × MAE`, so the existing
+  MAE-based `edf.tuning` harness is *already* correct pinball-loss tuning at that alpha, no code
+  changes needed) and reused across every other alpha — a stated simplification, not tuning each
+  quantile separately.
+- **Quantile crossing (done), `src/edf/quantile.py`:** 4.7% of `VALIDATION` rows have P10 > P50
+  or P50 > P90 before correction — a direct consequence of training each quantile as a fully
+  independent model. Fixed via the standard rearrangement trick (sort each row's predicted
+  values, reassign to the correspondingly-ordered alphas). Every metric below reflects the
+  corrected predictions.
+- **Calibration metrics (done), `src/edf/evaluate.py`:** `pinball_loss`, `quantile_coverage`,
+  `picp`, `interval_sharpness`.
+  - **PICP for the nominal-80% [P10, P90] interval: 65.2%** — meaningfully overconfident. Not a
+    tuning artifact: an untuned check earlier showed essentially the same gap (~67%), so proper
+    walk-forward-CV tuning didn't fix it — this is a structural property of independent
+    per-quantile LightGBM on this data, not a hyperparameter problem.
+  - **Reliability diagram shows a textbook tail-compression pattern**, not vague miscalibration:
+    observed coverage sits *above* the diagonal for α < 0.5 (e.g. α=0.05 → observed 0.140) and
+    *below* it for α > 0.5 (α=0.95 → observed 0.898), crossing almost exactly at the median
+    (α=0.4-0.6 within ~3 points of nominal). **The model knows the center of the distribution
+    well but systematically compresses both tails toward it** — a well-documented failure mode of
+    independent per-quantile tree boosting (no mechanism ties extreme quantiles to the full
+    distribution shape, and boosted trees under-extrapolate into the sparser regions extreme
+    values occupy). Confirmed visually in the one-week fan chart: actual demand repeatedly hugs
+    or dips below the P10-P90 band's lower edge during down-slopes.
+  - **This is a direct preview of Week 6's own stated expectation** ("calibration tends to break
+    down in the tails") — Week 5 already shows exactly that pattern, before any explicit
+    extreme-day bucketing.
+- **Deliverable (done):** calibration plots (reliability diagram + fan chart) + the plain
+  statement PLAN.md asks for: **overconfident, specifically and substantially in both tails,
+  well-calibrated near the median.** Not fixed here — a genuine fix (conformal prediction, an
+  explicit distributional model) is exactly the stretch-goal comparison already listed below
+  ("LightGBM quantile regression vs. a distributional alternative... for calibration
+  robustness") — this result is what motivates that stretch goal, not a gap to paper over.
 
 ## Week 6 — Extreme Events
 
