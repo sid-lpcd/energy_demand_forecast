@@ -406,6 +406,30 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
 - **Deliverable:** wind/solar capacity-factor forecast models + their own accuracy metrics, plus a
   demand-model comparison table: outturn-based features (upper bound) vs. self-forecasted features
   (realistic), with the interconnector-handling choice stated explicitly either way.
+- **Canonical table (done):** `wind_capacity`/`solar_capacity` added (`src/edf/data/clean.py`).
+  Observed: embedded wind capacity is nearly flat (6515-6606 MW, ~1.4% growth 2020-2025) while
+  embedded solar capacity grew ~70% (13040-22126 MW) — consistent with most new GB wind capacity
+  this period being offshore/transmission-connected (not embedded), while new solar is
+  predominantly small-scale/distribution-connected.
+- **Wind capacity-factor model (done), `notebooks/09_wind_capacity_factor.ipynb`:**
+  `src/edf/generation_features.py` builds `capacity_factor ~ f(wind speed, calendar)` — no lag/
+  rolling features, since generation is weather-driven not demand-driven (per PLAN.md's formula).
+  Same TRAIN-on-ERA5 / honest-check-on-day-ahead-slice structure as Week 4 (day-ahead wind speed
+  only exists from 2024-03-07, zero overlap with `TRAIN`).
+  - **Result:** MAE 0.0827 vs. the seasonal-naive capacity-factor baseline's 0.1979 — a **58%
+    reduction** (MASE 0.418), a bigger relative gain than weather gave the demand model (27.65%).
+    Makes sense: weather has almost no weekly pattern to exploit, so "same half-hour last week" is
+    a much weaker prior for wind than for demand.
+  - **Honest check:** the day-ahead-vs-ERA5 pattern from Week 4 repeats (day-ahead-fed MAE 0.0803
+    vs. ERA5-fed 0.0818, marginally better) but this time *without* a large bias gap explaining it
+    (0.024 vs. 0.021, both small) — more likely genuine slice-specific noise than a systematic
+    effect. Conclusion stands either way: the gap is small, so the gain is real, not hindsight-only.
+  - **Visual finding:** the model tracks *when* wind picks up/drops correctly but visibly
+    underestimates the *height* of high-wind peaks (e.g. one actual peak ≈0.61 vs. predicted
+    ≈0.53) — masked by a small-looking average bias (0.014) because it's averaged over the whole
+    distribution. Plausible cause: population-weighted weather (a documented Week 1 simplification)
+    likely understates wind speed at actual (rural/coastal) wind-farm sites relative to city
+    centres, especially during high-wind events. Noted as a real limitation, not fixed now.
 
 ## Week 5 — Probabilistic Forecasting
 
