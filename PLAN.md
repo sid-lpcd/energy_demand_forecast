@@ -456,6 +456,39 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
     exactly zero for roughly half of every day, and `mape` divides by the actual value) — worse
     than wind's near-zero-but-nonzero case. MAE/RMSE/MASE are the only trustworthy numbers here;
     worth remembering for Week 5's probabilistic work if other zero-heavy targets come up.
+- **Does self-forecasted wind/solar actually help the demand model? (done),
+  `notebooks/11_wind_solar_demand_impact.ipynb`:** three `1d` demand models, evaluated on the
+  identical `2024-03-07`-onward slice with day-ahead weather: no wind/solar (Week 4's baseline),
+  outturn wind/solar as features (leaky upper bound), self-forecasted wind/solar (from
+  `notebooks/09`/`10`, converted capacity factor → MW) as features (the deployable version).
+
+  | model | MAE | MASE | improvement vs. no-wind/solar |
+  |---|---|---|---|
+  | no wind/solar | 877.5 | 0.472 | — |
+  | outturn wind/solar | 680.6 | **0.366** | **22.4%** |
+  | self-forecast wind/solar | 876.7 | 0.472 | **0.09%** |
+
+  **The theoretical ceiling is real (22.4%) — genuine signal beyond what the Week 4 weather
+  proxies already capture — but the self-forecast version recovers essentially none of it**
+  (0.09% is noise, MASE identical to three decimals). Two compounding reasons, both visible in
+  the notebook: (1) the self-forecast itself is too noisy to help — wind's self-forecast runs
+  systematically low across an entire sample week, not just at peaks (echoing `notebooks/09`'s
+  visual finding); (2) some of the outturn gain may reflect information no weather-driven model
+  could ever predict (curtailment, mechanical outages, dispatch decisions), not just imperfect
+  wind-speed-to-generation modelling. **This closes the loop from Week 4: weather variables
+  already proxy for most of embedded generation's weather-explainable effect on demand, so
+  building a dedicated (imperfect) generation forecast on top doesn't pay for itself.**
+  **Recommendation: don't add self-forecasted wind/solar to the deployed demand model** — keep
+  the Week 4 weather features, which already capture this signal more cheaply and more reliably.
+  Also flagged a real pitfall: `wind`/`solar` rank highly (4/32, 7/32) in the outturn-trained
+  model's feature importance, which reads as "wind/solar matter a lot" — true only for the
+  outturn-fed model, and says nothing about the deployable (self-forecast) version's actual
+  accuracy. The comparison table, not the importance chart, is the number that matters for a
+  deployment decision.
+- **Interconnector:** left as a stated limitation, not modelled, per the plan above — flow is
+  price-driven, not weather-driven, so the wind/solar approach doesn't transfer, and the smaller
+  contributor-to-demand-variance argument (vs. temperature/wind/solar) makes this an acceptable
+  simplification to state rather than solve.
 
 ## Week 5 — Probabilistic Forecasting
 
