@@ -219,14 +219,57 @@ line.
 
 ## Week 3 — ML (LightGBM)
 
-- Feature engineering in `src/edf/features.py`: calendar features (half-hour-of-day, day-of-week,
-  month, UK bank holiday flag), Fourier terms for daily/weekly/annual seasonality, lag features
-  (t-1, t-2, t-48 i.e. same time yesterday, t-336 i.e. same time last week), rolling
-  mean/std windows.
-- Train LightGBM with the Week 1 time-based split; tune via walk-forward CV, not k-fold.
-- Compare against Week 2 baselines on MAE/RMSE/MASE, and check feature importance to sanity-check
-  the model learned something sensible (e.g. lag-336 and hour-of-day should dominate).
-- **Deliverable:** trained model + comparison table + short write-up of which features mattered.
+- **Feature engineering (done), `src/edf/features.py`:** `time_features` (half-hour-of-day,
+  day-of-week, month, plus daily/weekly/annual Fourier terms, order 2) — deterministic facts about
+  the *target* timestamp, valid at every horizon. `lag_features`/`rolling_features` — lag_1/lag_2/
+  lag_48/lag_336 and the Week 2 `trailing_moving_average`/`trailing_weekly_moving_average`
+  baselines reused directly as model inputs — filtered by horizon exactly like
+  `edf.baselines.valid_baselines` (a lag shorter than the horizon would use data not yet known at
+  issue time). `wind`/`solar`/`interconnector` are deliberately excluded per PLAN.md's leakage
+  warning (Week 4b fixes this properly). Tested in `tests/test_features.py`.
+- **Two strategies for covering all four horizons (done), `src/edf/forecast.py`:**
+  - **Direct**: one LightGBM model per horizon, each trained only on that horizon's valid features
+    (`build_feature_table`).
+  - **Recursive**: one model trained at `30min` (every feature valid there), rolled forward via
+    `recursive_forecast` — a vectorized simulator that feeds each step's own prediction back in as
+    the next step's short lags, batched across all evaluation points per step (336 steps × ~17.5k
+    rows for the `7d` horizon runs in ~13s). `lag_336`/`trailing_weekly_moving_average` never need a
+    synthetic value within these horizons (their min lag, 336, exceeds every horizon tested);
+    `lag_1`/`lag_2` and `trailing_moving_average`'s shorter terms do. Verified in
+    `tests/test_forecast.py` that `recursive_forecast` at `horizon_periods=1` is provably identical
+    to the direct model (same features, same order) — the key architectural invariant.
+  - Default LightGBM hyperparameters (`DEFAULT_LGBM_PARAMS`), not tuned — walk-forward
+    hyperparameter tuning is separate, later work; this comparison answers direct-vs-recursive
+    specifically.
+- **Deliverable (done):** `notebooks/06_lightgbm_horizons.ipynb` — full comparison table (direct,
+  recursive, every valid baseline) per horizon, **scored on `VALIDATION` (2024) only** (unlike
+  Week 2's baselines, a fitted model scored on its own `TRAIN` data would be in-sample/optimistic),
+  logged to MLflow (`baselines`/`direct`/`recursive` runs now share one `forecast-<horizon>`
+  experiment per horizon, so the whole comparison is queryable together — `edf.tracking.log_model_run`
+  gained an `extra_tags` param for the `strategy` dimension).
+- **Result — recursive is competitive at one extra step, then falls behind:**
+
+  | horizon | direct MASE | recursive MASE |
+  |---|---|---|
+  | `30min` | 0.105 | *(= direct)* |
+  | `1h` (2 steps) | 0.180 | **0.172** (recursive slightly better) |
+  | `1d` (48 steps) | 0.623 | 0.634 |
+  | `7d` (336 steps) | 0.782 | 0.824 |
+
+  At `1h`, recursive edges out direct: with only one compounding step, the cost is negligible, and
+  the recursive base model gets to use `lag_1`/`lag_2` (via its own prediction as a proxy) that the
+  direct `1h` model has to do without entirely (too short a lag to be valid at that horizon). By
+  `7d`, 336 steps of compounding catch up with it. **Practical takeaway: use direct per-horizon
+  models for `1d`/`7d`; recursive is a reasonable, cheaper choice at `1h` if only one model is
+  wanted.** More importantly, **both strategies beat every baseline at every horizon**, including
+  `7d` (best baseline MASE = 1.0 by construction; direct LightGBM MASE ≈ 0.78) — the model is
+  learning real structure, not just leaning on the same lags the baselines already use.
+- **Feature importance (`1d` direct model):** dominated by **annual-seasonality Fourier terms**, not
+  `lag_336`/`hour_of_day` as originally guessed — consistent with this project's own weather
+  exploration finding that temperature is the single biggest external driver of GB demand, so a
+  sensible result even though it wasn't the anticipated one. `lag_48` (same lag as the horizon
+  itself), weekly structure (`fourier_weekly_*`/`day_of_week`), and both trailing-average baseline
+  features rank next; `lag_336`/`hour_of_day` matter but rank lower than expected.
 
 ## Week 4 — Weather
 

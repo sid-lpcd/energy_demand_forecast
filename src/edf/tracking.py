@@ -6,7 +6,9 @@ notebooks, not something to commit. One MLflow *experiment* per forecast
 horizon (`edf.config.HORIZONS`), since metrics aren't comparable across
 horizons (see `edf.config`'s docstring) — keeping them in separate experiments
 stops the MLflow UI from sorting a 30-minute-ahead MAE next to a 7-day-ahead
-one as if they were on the same scale.
+one as if they were on the same scale. Baselines *and* models share the same
+per-horizon experiment (not split further), since being directly comparable
+within a horizon is exactly the point.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ METRIC_COLUMNS = ("mae", "rmse", "mape", "mase")
 
 
 def experiment_name(horizon_name: str) -> str:
-    return f"baselines-{horizon_name}"
+    return f"forecast-{horizon_name}"
 
 
 def log_model_run(
@@ -36,6 +38,7 @@ def log_model_run(
     model_name: str,
     fold_metrics: pd.DataFrame,
     tracking_uri: str | None = None,
+    extra_tags: dict[str, str] | None = None,
 ) -> None:
     """Log one (horizon, model) run: per-fold metric curves plus their mean.
 
@@ -45,6 +48,9 @@ def log_model_run(
     with `step=year` so MLflow can plot them as a curve; `mean_*` keys hold
     the aggregate used for cross-model/cross-horizon comparison, kept
     separately named so they aren't mistaken for "the last fold's value".
+    `extra_tags` (e.g. `{"strategy": "recursive"}`) is merged in alongside
+    the standard horizon/model tags, for runs that need another dimension to
+    stay distinguishable within one horizon's experiment.
     """
     if tracking_uri is None:
         MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
@@ -52,7 +58,7 @@ def log_model_run(
     mlflow.set_experiment(experiment_name(horizon_name))
 
     with mlflow.start_run(run_name=model_name):
-        mlflow.set_tags({"horizon": horizon_name, "model": model_name})
+        mlflow.set_tags({"horizon": horizon_name, "model": model_name, **(extra_tags or {})})
         mlflow.log_param("horizon_periods", horizon_periods)
         mlflow.log_param("n_folds", len(fold_metrics))
 

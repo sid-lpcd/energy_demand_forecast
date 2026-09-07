@@ -5,8 +5,8 @@ from edf.tracking import experiment_name, log_model_run
 
 
 def test_experiment_name_is_namespaced_by_horizon():
-    assert experiment_name("1d") == "baselines-1d"
-    assert experiment_name("7d") == "baselines-7d"
+    assert experiment_name("1d") == "forecast-1d"
+    assert experiment_name("7d") == "forecast-7d"
 
 
 def test_log_model_run_records_params_tags_and_metrics(tmp_path):
@@ -30,7 +30,7 @@ def test_log_model_run_records_params_tags_and_metrics(tmp_path):
     )
 
     mlflow.set_tracking_uri(tracking_uri)
-    experiment = mlflow.get_experiment_by_name("baselines-1d")
+    experiment = mlflow.get_experiment_by_name("forecast-1d")
     assert experiment is not None
 
     runs = mlflow.search_runs(experiment_ids=[experiment.experiment_id])
@@ -45,3 +45,24 @@ def test_log_model_run_records_params_tags_and_metrics(tmp_path):
     assert run["metrics.mae"] == 20.0
     assert run["metrics.mean_mae"] == 15.0
     assert run["metrics.mean_mase"] == 0.55
+
+
+def test_log_model_run_merges_extra_tags(tmp_path):
+    tracking_uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    fold_metrics = pd.DataFrame({"mae": [10.0]}, index=pd.Index([2024], name="year"))
+
+    log_model_run(
+        horizon_name="7d",
+        horizon_periods=336,
+        model_name="lightgbm",
+        fold_metrics=fold_metrics,
+        tracking_uri=tracking_uri,
+        extra_tags={"strategy": "recursive"},
+    )
+
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment = mlflow.get_experiment_by_name("forecast-7d")
+    run = mlflow.search_runs(experiment_ids=[experiment.experiment_id]).iloc[0]
+
+    assert run["tags.strategy"] == "recursive"
+    assert run["tags.horizon"] == "7d"
