@@ -331,12 +331,36 @@ line.
   empirically, same null-scanning method as the original Week 1 check.
   `DAY_AHEAD_ARCHIVE_START` (2024-03-07) was unaffected, so the honest-ablation slice below doesn't
   shrink.
-- **State the hypothesis before running it**: e.g. "weather should reduce demand-forecast error more
-  than wind/solar-forecast error, since wind/solar are already directly observed in the
-  target-adjacent NESO estimates." Then check if that's true.
-- **Deliverable:** ablation table (ERA5 vs. genuine day-ahead, where the latter applies) + short
-  experiment write-up (hypothesis, result, honest interpretation — including if the effect is
-  smaller than expected, or smaller still once real forecasts replace reanalysis).
+- **Hypothesis stated before running (done):** temperature isn't represented anywhere in the Week 3
+  feature set, so adding it (directly, plus heating/cooling degree-day features,
+  `src/edf/weather_features.py`, UK convention 15.5°C/22°C bases) should measurably reduce `1d`-ahead
+  error. Confirmed, and by more than expected — see below.
+- **Deliverable (done):** `notebooks/08_weather_ablation.ipynb`, `1d` horizon, tuned direct models
+  (same walk-forward-CV procedure as `notebooks/07`), scored on `VALIDATION` only.
+  - **Ablation A (full `VALIDATION`):** ERA5 weather cuts MAE by **27.65%** (MASE 0.606 → 0.439) —
+    the single largest accuracy gain found anywhere in this project so far, bigger than the
+    direct-vs-recursive choice or hyperparameter tuning.
+  - **Ablation B (honest, `2024-03-07`-onward slice):** reuses the *same* ERA5-trained model, fed
+    day-ahead-forecast weather instead of ERA5 at inference time (no way to train a day-ahead-weather
+    model — the archive only starts 2024-03-07). ERA5 gives 25.84% MAE improvement on this slice,
+    day-ahead gives **26.79%** — nearly all of the gain survives contact with realistic
+    forecast-quality weather. The day-ahead-fed evaluation actually scored marginally *better* than
+    ERA5-fed on this slice; the `bias` metric explains why (weather-on-ERA5 bias ≈ -191 MW,
+    weather-on-day-ahead ≈ -7 MW) — plausibly a coincidental bias cancellation specific to this
+    ~10-month window (day-ahead forecasts are numerically smoothed relative to ERA5 reanalysis),
+    not evidence that forecast-quality weather beats hindsight weather in general. **The robust
+    conclusion is the narrower one: the 25.84%-vs-26.79% gap is small, so the weather gain is real,
+    not a hindsight-only artifact** — a stronger, more defensible claim than "day-ahead wins."
+  - **Feature importance:** `shortwave_radiation_wm2` (rank 5/30) and `wind_speed_ms` (rank 7/30)
+    both rank *above* `temperature_c` (13/30) and `heating_degree` (17/30) — not what the
+    temperature-only hypothesis predicted. Ties back to Week 1's embedded-generation-netting note:
+    `demand` already has embedded wind/solar invisibly netted in, and while `wind`/`solar` actuals
+    are correctly never used as features (same-period, not forecastable), weather variables that
+    *correlate* with embedded generation (wind speed with embedded wind, shortwave radiation with
+    embedded solar) are legitimate forecast-based proxies for that suppression effect — and
+    evidently a strong one. `cooling_degree` ranks lowest (24/30), as expected for a
+    heating-driven, not cooling-driven, climate.
+  - **Pre-req fix (done):** see the model-pinning note above — resolved before trusting this ablation.
 
 ## Week 4b — Forecasting the Inputs (fixes the wind/solar/interconnector leakage)
 
