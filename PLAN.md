@@ -714,6 +714,44 @@ features and retrained the bias-corrected point model.
   attempted — the leaky ceiling already found is far enough below NESO that the expected payoff is
   small.
 
+### Follow-up 2: a genuinely deployable source closes almost all of it — `notebooks/18`
+
+The fuel-mix conclusion above ("not recoverable from any currently-available free public
+dataset") turns out to be right about generation-side proxies specifically, but wrong as a
+general claim. **Elexon BMRS `NDF`** (`src/edf/data/ndf.py`,
+`notebooks/18_ndf_residual_correction.ipynb`) is National Grid ESO's own half-hourly demand
+forecast, republished on a rolling basis — a genuine forecast (not a same-period actual like
+`FUELHH`), so this one isn't leaky. Kept only the revision still published on the calendar day
+before delivery, matching what would genuinely have been available at prediction time.
+
+- **NDF alone is dramatically more accurate than our from-scratch model, across the *entire*
+  half-hourly VALIDATION year** (MAE 534.46 vs. our matched-TRAIN baseline's 886.36 — full
+  half-hourly comparison, n=17,568), not just at the trough. This is a richer comparison than
+  the original NESO benchmark (`notebooks/16`) could do, since that one was limited to ~12
+  coarse cardinal points/day (the only resolution the NESO portal archive retains); NDF is
+  published half-hourly, so it can be compared against the full VALIDATION set.
+- **A residual-correction model (predict `actual − NDF`, add it back) barely helps, and only at
+  the trough.** Trough MAE improves only marginally (502.07 → 500.58) with a real bias
+  reduction (63.37 → 31.31), but overall it's actually slightly *worse* than NDF alone (534.46
+  → 542.58) and reintroduces bias NDF alone didn't have. NDF is already close to as good as it
+  gets; our own weather/calendar/lag features don't have much left to add on top of it.
+- **Real cost, controlled for fairly**: NDF's archive only starts 2021-06-14, so any model using
+  it loses ~1.5 years of TRAIN. The baseline above is retrained on the *same* matched TRAIN
+  window for a fair comparison (890.30 trough MAE vs. the original full-TRAIN baseline's
+  901.71 — barely different, confirming the shorter TRAIN isn't what's driving NDF's advantage).
+- **Caveat on "beating" the `notebooks/16` NESO archive number (618.64 at the trough)**: not a
+  clean apples-to-apples claim. NDF's day-ahead value here is the *latest* revision still on the
+  day before (a shorter lead than "day ahead" implies); the NESO portal archive instead kept the
+  *earliest* of ~2 same-day publications (a more conservative, further-ahead value). Different
+  lead-time conventions on nominally the same underlying NESO forecast produce different
+  accuracy — the fresher revision naturally looks sharper.
+- **Practical framing going forward**: not "beat NESO from scratch," and not "a correction layer
+  adds real value" (the original hypothesis here, not borne out) — the honest, useful
+  conclusion is that NDF itself is a strong forecast, and what this project's own model can
+  still meaningfully add is coverage for the ~1.5 years before NDF's archive starts, or a
+  fallback for whenever NDF is unavailable, plus the modest trough-specific bias reduction the
+  correction does provide.
+
 ## Week 8 — Publish + Impact Estimate
 
 - GitHub repo: proper README, methodology, results, and an explicit **Limitations** section
