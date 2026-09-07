@@ -47,15 +47,26 @@ class Predictor(Protocol):
     def predict(self, X: pd.DataFrame) -> np.ndarray: ...
 
 
-def train_lightgbm(X: pd.DataFrame, y: pd.Series, **params: object) -> lgb.LGBMRegressor:
+def train_lightgbm(
+    X: pd.DataFrame,
+    y: pd.Series,
+    sample_weight: pd.Series | None = None,
+    **params: object,
+) -> lgb.LGBMRegressor:
     """Fit a LightGBM regressor with this project's default hyperparameters.
 
     Hyperparameters are fixed, sane defaults, not tuned — walk-forward
     hyperparameter tuning is separate, later Week 3 work (PLAN.md), out of
     scope for the direct-vs-recursive comparison this trains models for.
+
+    `sample_weight`, if given, up- or down-weights individual rows in the
+    loss — e.g. Week 6's bias-correction experiment upweights extreme-bucket
+    rows so a systematic under/over-forecast there costs the optimizer more,
+    directly countering "rare regime diluted by average loss" rather than
+    requiring a differently-shaped loss function.
     """
     model = lgb.LGBMRegressor(**{**DEFAULT_LGBM_PARAMS, **params})
-    model.fit(X, y)
+    model.fit(X, y, sample_weight=sample_weight)
     return model
 
 

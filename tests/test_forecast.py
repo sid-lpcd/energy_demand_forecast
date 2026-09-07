@@ -51,6 +51,31 @@ def test_train_lightgbm_smoke():
     assert preds.shape == (len(X),)
 
 
+def test_train_lightgbm_accepts_sample_weight():
+    n = PERIODS_PER_WEEK * 4 + 50
+    df = _canonical_df(n)
+    X, y = build_feature_table(df, horizon_periods=1)
+    sample_weight = pd.Series(1.0, index=X.index)
+
+    model = train_lightgbm(X, y, sample_weight=sample_weight, n_estimators=5)
+
+    assert model.predict(X).shape == (len(X),)
+
+
+def test_train_lightgbm_sample_weight_changes_the_fit():
+    n = PERIODS_PER_WEEK * 4 + 50
+    df = _canonical_df(n)
+    X, y = build_feature_table(df, horizon_periods=1)
+
+    uniform = train_lightgbm(X, y, n_estimators=20, random_state=0)
+    weighted = pd.Series(1.0, index=X.index)
+    weighted.iloc[: len(weighted) // 2] = 50.0  # heavily upweight the first half
+    skewed = train_lightgbm(X, y, sample_weight=weighted, n_estimators=20, random_state=0)
+
+    # heavily reweighting the training rows should change what the model learns
+    assert not np.allclose(uniform.predict(X), skewed.predict(X))
+
+
 def test_recursive_forecast_persistence_chain_matches_hand_computed_values():
     n = 2000
     df = _canonical_df(n)
