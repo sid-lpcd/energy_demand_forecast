@@ -651,6 +651,40 @@ again double-counts the same effect and produces a number without a clean physic
 - **Deliverable (done):** per-embedded-renewable-decile error table + plots (MAE/bias/PICP vs.
   decile) + the accuracy-vs-calibration shape distinction above.
 
+## NESO Benchmark Comparison (done, ahead of Week 8)
+
+Not a numbered week — a direct answer to "does our model beat what NESO actually forecast?",
+using the benchmark collected in Week 1 (`src/edf/data/demand_forecast_benchmark.py`) but never
+compared against until now. Done ahead of Week 8 because the report needs this number.
+
+- **Done, `notebooks/16_neso_benchmark_comparison.ipynb`:** NESO's archive isn't half-hourly —
+  ~12 "cardinal points"/day (overnight minimum, peaks, etc.), each kept as the earliest of ~2
+  same-day publications (the more conservative, furthest-ahead value — a genuine ~1-day-ahead
+  comparison). Our current point model (bias-corrected recipe) scored on *exactly* those 4,148
+  shared `VALIDATION` timestamps, not our full half-hourly set — comparing different target rows
+  would say nothing.
+  - **NESO's real forecast beats ours, honestly: MAE 782.97 (MASE 0.41) vs. our 835.75 (MASE
+    0.44) — NESO is ~6.3% more accurate.** Stated plainly, not spun: a single-person project
+    doesn't beat a national grid operator's professional forecasting operation, and that's an
+    expected, credible result. Both share a similar over-forecasting tendency (bias -241 MW NESO
+    vs. -94 MW ours) — NESO's edge isn't from being less biased, its typical errors are just
+    tighter overall (RMSE 1085 vs. 1115).
+  - **The gap is not uniform — it's concentrated almost entirely at the overnight minimum.**
+    Broken down by `CP_TYPE`: at troughs (n=857), NESO wins by **31.4%**; at peaks (n=1757), the
+    gap nearly disappears (+3.4%); at the broader "other" cardinal points (n=1534), **we're
+    actually ~7.9% more accurate than NESO**. Physically sensible: overnight minimum demand is
+    disproportionately driven by a smaller number of large, schedulable loads (industrial
+    baseload, planned operations) that a system operator with direct administrative visibility
+    into consumer schedules can predict far better than a weather/calendar/lag feature model —
+    exactly the kind of knowledge no amount of better weather data would recover. Peaks are
+    driven by the same broad weather/calendar-driven population behaviour our feature set
+    targets, so the gap there is small.
+  - **Headline for Week 8's report**: not "we matched NESO" (false) or "our model isn't good
+    enough" (wrong takeaway) — the honest, specific claim is *where* a from-scratch model can and
+    can't compete with an operator holding direct administrative visibility into demand. A
+    concrete "what you'd do with more time" candidate: trough-specific features capturing known
+    large-consumer schedules, if such data were ever accessible.
+
 ## Week 8 — Publish + Impact Estimate
 
 - GitHub repo: proper README, methodology, results, and an explicit **Limitations** section
