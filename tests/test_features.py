@@ -111,3 +111,32 @@ def test_build_feature_table_horizon_336_only_has_valid_lags():
     assert "lag_336" in X.columns
     assert "trailing_moving_average" not in X.columns
     assert "trailing_weekly_moving_average" in X.columns
+
+
+def test_build_feature_table_merges_optional_weather_columns():
+    n = PERIODS_PER_WEEK * 4 + 20
+    df = _canonical_df(n)
+    weather = pd.DataFrame(
+        {"temperature_c": np.arange(n, dtype=float), "heating_degree": np.zeros(n)},
+        index=df.index,
+    )
+
+    X, y = build_feature_table(df, horizon_periods=1, weather=weather)
+
+    assert {"temperature_c", "heating_degree"}.issubset(X.columns)
+    assert not X.isna().any().any()
+    assert y.equals(df.loc[X.index, "demand"])
+
+
+def test_build_feature_table_drops_rows_where_weather_is_missing():
+    n = PERIODS_PER_WEEK * 4 + 20
+    df = _canonical_df(n)
+    weather = pd.DataFrame(
+        {"temperature_c": np.arange(n, dtype=float)},
+        index=df.index,
+    )
+    weather.iloc[-1] = np.nan  # simulate weather source not covering the last row
+
+    X, _ = build_feature_table(df, horizon_periods=1, weather=weather)
+
+    assert df.index[-1] not in X.index

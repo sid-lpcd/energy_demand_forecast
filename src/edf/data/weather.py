@@ -13,19 +13,37 @@
    typically ~0-3h lead, not a fixed lead time. It's still more honest than
    ERA5 hindsight since a real model run couldn't see the future, but it does
    not represent a deployable day-ahead forecast.) Empirically verified
-   (2026-09-06, by diffing against source #1) that it silently falls back to
-   identical ERA5 values before 2022-03-01 — only ever requested from that
-   date onward.
+   (2026-09-06) that it silently falls back to identical ERA5 values before
+   2022-03-01 under the default "Best Match" model selection.
 4. **Open-Meteo Previous Runs API** — genuine **fixed lead-time** forecasts
    (`_previous_day1` = the forecast issued ~24h before the target hour, i.e.
    an actual day-ahead forecast). Empirically verified (2026-09-06) that each
-   variable has its own archive-start date, all-null before it — temperature
-   from 2024-02-04, but `shortwave_radiation_previous_day1` only from
-   **2024-03-07**. `DAY_AHEAD_ARCHIVE_START` uses the latest (strictest) of
-   the four so the resulting dataset has zero nulls rather than a
-   variable-dependent partial-null window. This is the one source that lets
-   Week 4 test *real* deployable forecast-based accuracy, for the
-   2024-03-07-onward slice.
+   variable has its own archive-start date under "Best Match", all-null
+   before it — temperature from 2024-02-04, `shortwave_radiation_previous_day1`
+   only from 2024-03-07.
+
+**Model pinning (added 2026-09-07):** sources #3 and #4 originally used
+Open-Meteo's default "Best Match" model selection, which — its own docs say —
+resolves to "the most suitable high-resolution model" *per endpoint*, not
+guaranteed to be the same underlying model on both. `notebooks/02_explore_weather_data.ipynb`
+found this mattered in practice: the day-ahead source's naive error against
+ERA5 came out *lower* than the nowcast source's, backwards from what more
+lead time should give — a symptom of comparing two different models, not
+just two different lead times. Both fetchers now pin `models=ecmwf_ifs025`
+explicitly so the only thing that differs between them is lead time. This
+changed the empirical archive-start dates (re-verified 2026-09-07, same
+null-scanning method as before, now against the pinned model): the nowcast
+archive's binding variable (`shortwave_radiation`) only becomes available
+from **2024-03-06** under this specific model — much later than the
+"Best Match" default's 2022-03-01, since Open-Meteo's archived history for
+one fixed model doesn't extend as far back as its always-pick-the-best-available
+selection does. The day-ahead source's own start barely moved
+(`shortwave_radiation_previous_day1` from 2024-03-07, same as before pinning)
+since it was already effectively anchored to a similarly-recent model. Net
+effect: the two sources now overlap validly only from 2024-03-07 onward —
+unchanged for the day-ahead-based Week 4 ablation (which only ever needed
+this slice), but the nowcast archive's usable window shrank by about two
+years.
 
 All four are free and require no API key.
 
@@ -45,7 +63,8 @@ from typing import NamedTuple
 import pandas as pd
 import requests
 
-NOWCAST_ARCHIVE_START = pd.Timestamp("2022-03-01", tz="UTC")
+PINNED_MODEL = "ecmwf_ifs025"  # explicit model for sources #3/#4 — see module docstring
+NOWCAST_ARCHIVE_START = pd.Timestamp("2024-03-06", tz="UTC")  # binding var: shortwave_radiation
 DAY_AHEAD_ARCHIVE_START = pd.Timestamp("2024-03-07", tz="UTC")  # latest of the 4 variables' cutovers
 
 
@@ -130,13 +149,13 @@ def fetch_nasa_power(lat: float, lon: float, start: str, end: str) -> pd.DataFra
 def fetch_open_meteo_nowcast_archive(lat: float, lon: float, start: str, end: str) -> pd.DataFrame:
     """Short-lead (~0-3h) nowcast archive. NOT a day-ahead forecast — see module docstring.
 
-    Only valid from NOWCAST_ARCHIVE_START (silently falls back to ERA5 before that).
+    Only valid from NOWCAST_ARCHIVE_START (all-null before that, under the
+    pinned model — see module docstring for why it's pinned at all).
     """
     if pd.Timestamp(start, tz="UTC") < NOWCAST_ARCHIVE_START:
         raise ValueError(
-            f"Historical Forecast API has no genuine nowcast data before "
-            f"{NOWCAST_ARCHIVE_START.date()} (verified empirically — it silently "
-            f"falls back to ERA5 reanalysis before that date). Requested start={start}."
+            f"Historical Forecast API has no data for model={PINNED_MODEL!r} before "
+            f"{NOWCAST_ARCHIVE_START.date()} (verified empirically). Requested start={start}."
         )
     resp = requests.get(
         "https://historical-forecast-api.open-meteo.com/v1/forecast",
@@ -147,6 +166,7 @@ def fetch_open_meteo_nowcast_archive(lat: float, lon: float, start: str, end: st
             "end_date": end,
             "hourly": "temperature_2m,wind_speed_10m,cloud_cover,shortwave_radiation",
             "wind_speed_unit": "ms",
+            "models": PINNED_MODEL,
             "timezone": "UTC",
         },
         timeout=60,
@@ -167,12 +187,13 @@ def fetch_open_meteo_nowcast_archive(lat: float, lon: float, start: str, end: st
 def fetch_open_meteo_day_ahead(lat: float, lon: float, start: str, end: str) -> pd.DataFrame:
     """Genuine ~24h-ahead forecast (Previous Runs API, `_previous_day1`).
 
-    Only valid from DAY_AHEAD_ARCHIVE_START (all-null before that, verified empirically).
+    Only valid from DAY_AHEAD_ARCHIVE_START (all-null before that, under the
+    pinned model — verified empirically).
     """
     if pd.Timestamp(start, tz="UTC") < DAY_AHEAD_ARCHIVE_START:
         raise ValueError(
-            f"Previous Runs API day-1 data is null before {DAY_AHEAD_ARCHIVE_START.date()} "
-            f"(verified empirically). Requested start={start}."
+            f"Previous Runs API day-1 data for model={PINNED_MODEL!r} is null before "
+            f"{DAY_AHEAD_ARCHIVE_START.date()} (verified empirically). Requested start={start}."
         )
     variables = [
         "temperature_2m_previous_day1",
@@ -189,6 +210,7 @@ def fetch_open_meteo_day_ahead(lat: float, lon: float, start: str, end: str) -> 
             "end_date": end,
             "hourly": ",".join(variables),
             "wind_speed_unit": "ms",
+            "models": PINNED_MODEL,
             "timezone": "UTC",
         },
         timeout=60,

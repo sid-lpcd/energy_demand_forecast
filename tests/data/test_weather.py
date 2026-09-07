@@ -19,8 +19,8 @@ def test_population_weights_sum_to_one_and_favour_london():
 
 
 def test_nowcast_archive_rejects_dates_before_verified_cutover():
-    with pytest.raises(ValueError, match="2022-03-01"):
-        fetch_open_meteo_nowcast_archive(51.5, -0.1, "2021-12-31", "2022-01-01")
+    with pytest.raises(ValueError, match="2024-03-06"):
+        fetch_open_meteo_nowcast_archive(51.5, -0.1, "2024-03-05", "2024-03-06")
 
 
 def test_day_ahead_rejects_dates_before_verified_cutover():
@@ -30,10 +30,10 @@ def test_day_ahead_rejects_dates_before_verified_cutover():
 
 def test_archive_start_constants_not_moved_accidentally():
     # Regression guard: both constants were verified empirically against the
-    # live APIs (see weather.py docstring) -- changing them silently would
-    # reintroduce either the ERA5-fallback-mislabelled-as-nowcast bug, or
-    # silently accept all-null "day ahead" data as if it were real.
-    assert NOWCAST_ARCHIVE_START == pd.Timestamp("2022-03-01", tz="UTC")
+    # live APIs, pinned to PINNED_MODEL (see weather.py docstring) -- changing
+    # them silently would reintroduce either accepting all-null nowcast data,
+    # or silently accepting all-null "day ahead" data, as if either were real.
+    assert NOWCAST_ARCHIVE_START == pd.Timestamp("2024-03-06", tz="UTC")
     assert DAY_AHEAD_ARCHIVE_START == pd.Timestamp("2024-03-07", tz="UTC")
 
 

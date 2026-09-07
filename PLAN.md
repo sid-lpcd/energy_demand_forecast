@@ -317,13 +317,20 @@ line.
   actually have known at lead time" — turning the Week 1 "weather is observed, not forecast"
   limitation into an honest reported number for the 2024-03-07-onward slice, rather than leaving it
   as an unaddressed caveat.
-- **Pre-req found in `notebooks/02_explore_weather_data.ipynb` (2026-09-06):** naively, the
-  day-ahead source's error against ERA5 came out *lower* than the nowcast source's — the opposite of
-  what more lead time should give. Likely cause: both endpoints default to "Best Match", which
-  Open-Meteo's docs say resolves to "the most suitable high-resolution model" *per endpoint* — not
-  guaranteed to be the same underlying model, so the comparison currently conflates lead time with
-  model choice. **Before trusting the Week 4 day-ahead ablation, pin both endpoints to the same
-  explicit `models=` value and re-check** this doesn't change conclusions.
+- **Pre-req found in `notebooks/02_explore_weather_data.ipynb` (2026-09-06), fixed (2026-09-07):**
+  naively, the day-ahead source's error against ERA5 came out *lower* than the nowcast source's —
+  the opposite of what more lead time should give. Cause confirmed: both endpoints defaulted to
+  "Best Match", which Open-Meteo's docs say resolves to "the most suitable high-resolution model"
+  *per endpoint* — not guaranteed to be the same model, so the comparison conflated lead time with
+  model choice. **Fixed** by pinning both fetchers to an explicit `models="ecmwf_ifs025"`
+  (`src/edf/data/weather.py`, `PINNED_MODEL`) — re-checking against live data now gives the
+  expected ordering (nowcast MAE 0.374°C vs. ERA5, day-ahead MAE 0.546°C — day-ahead genuinely
+  worse, as more lead time should give). Side effect: pinning shrank the nowcast archive's own
+  usable window from 2022-03-01 to **2024-03-06** (Open-Meteo's archived history for one fixed
+  model doesn't reach as far back as its always-pick-the-best selection does) — re-verified
+  empirically, same null-scanning method as the original Week 1 check.
+  `DAY_AHEAD_ARCHIVE_START` (2024-03-07) was unaffected, so the honest-ablation slice below doesn't
+  shrink.
 - **State the hypothesis before running it**: e.g. "weather should reduce demand-forecast error more
   than wind/solar-forecast error, since wind/solar are already directly observed in the
   target-adjacent NESO estimates." Then check if that's true.

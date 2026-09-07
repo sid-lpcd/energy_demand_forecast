@@ -134,23 +134,32 @@ def deterministic_features(df: pd.DataFrame) -> pd.DataFrame:
     return X
 
 
-def build_feature_table(df: pd.DataFrame, horizon_periods: int) -> tuple[pd.DataFrame, pd.Series]:
+def build_feature_table(
+    df: pd.DataFrame, horizon_periods: int, weather: pd.DataFrame | None = None
+) -> tuple[pd.DataFrame, pd.Series]:
     """Assemble (X, y) for training/scoring a demand model at a given horizon.
 
     `df` is the canonical table (`edf.data.clean.build_canonical_table`).
+    `weather`, if given, is an already-built weather feature table
+    (`edf.weather_features.build_weather_feature_table`) indexed like `df` —
+    deliberately left as a plain optional join here rather than this module
+    picking a source itself, since *which* weather source is valid (ERA5
+    hindsight vs. a genuine day-ahead forecast, and over what date range) is
+    an experiment-design decision for the caller (see Week 4 in PLAN.md), not
+    something `build_feature_table` should decide on its own.
     Rows with any NaN feature (the lag/rolling warm-up period at the very
-    start of the data) are dropped; `X` and `y` come back aligned on the
-    surviving index.
+    start of the data, or wherever `weather` doesn't cover) are dropped; `X`
+    and `y` come back aligned on the surviving index.
     """
     demand = df["demand"]
-    X = pd.concat(
-        [
-            deterministic_features(df),
-            lag_features(demand, horizon_periods),
-            rolling_features(demand, horizon_periods),
-        ],
-        axis=1,
-    )
+    parts = [
+        deterministic_features(df),
+        lag_features(demand, horizon_periods),
+        rolling_features(demand, horizon_periods),
+    ]
+    if weather is not None:
+        parts.append(weather)
+    X = pd.concat(parts, axis=1)
 
     valid = X.notna().all(axis=1)
     X = X.loc[valid]
