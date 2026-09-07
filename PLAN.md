@@ -685,6 +685,35 @@ compared against until now. Done ahead of Week 8 because the report needs this n
     concrete "what you'd do with more time" candidate: trough-specific features capturing known
     large-consumer schedules, if such data were ever accessible.
 
+### Follow-up: is any of NESO's trough edge recoverable from free public data?
+
+Direct test of the "what you'd do with more time" candidate above, using **Elexon BMRS
+`FUELHH`** (`src/edf/data/fuel_mix.py`, `notebooks/17_fuel_mix_trough_test.ipynb`) — free,
+keyless, half-hourly generation by fuel type. Added `PS` (pumped storage, e.g. Dinorwig — the
+fuel type most directly tied to *deliberate* trough/peak management), plus `NUCLEAR`/`CCGT`, as
+features and retrained the bias-corrected point model.
+
+- **This is a leaky, same-period-actual test, explicitly** — `FUELHH` is outturn generation, not
+  a forecast, exactly the same caveat this project already applies to `wind`/`solar`/
+  `interconnector`. The point isn't deployability, it's whether genuine signal exists at all
+  (same honest-ablation-first pattern as Week 4b).
+- **Real but modest: trough MAE 901.71 → 865.84 (~4%), with no cost overall (885.70 → 882.00).**
+  Even with this leaky, strictly-more-informative-than-any-deployable-feature version, we're
+  still ~40% behind NESO at the trough (vs. ~46% at baseline) — the gap barely narrows. Confirms
+  the Week 8 headline above empirically: NESO's real edge is very likely private consumer-schedule
+  knowledge, not something recoverable from any currently-available free public dataset.
+- **The improvement isn't coming from the hypothesized mechanism.** `PS` — the fuel type the test
+  was built around — ranks only 16/34 in feature importance; `NUCLEAR` (3/34) and `CCGT` (4/34)
+  dominate instead. Likely because `CCGT` (the system's main dispatched-to-match-demand
+  generation) near-tautologically mirrors the *whole* demand curve, so it's useful everywhere,
+  while `PS`'s genuine signal — visually confirmed to track each night's trough/peak precisely
+  (sharp negative dip exactly at the trough, positive surge at the morning peak) — is only sharply
+  informative in one narrow regime and so gets less credit from a loss-minimizing tree.
+- **Not pursued further**: a possible next step (sample-weighting trough rows specifically when
+  training with fuel-mix features, forcing the model to lean on `PS` over `CCGT`) is noted but not
+  attempted — the leaky ceiling already found is far enough below NESO that the expected payoff is
+  small.
+
 ## Week 8 — Publish + Impact Estimate
 
 - GitHub repo: proper README, methodology, results, and an explicit **Limitations** section
