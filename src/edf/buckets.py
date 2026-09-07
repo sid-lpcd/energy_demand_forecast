@@ -60,6 +60,24 @@ def is_weekend(index: pd.DatetimeIndex) -> pd.Series:
     return pd.Series(index.dayofweek >= 5, index=index)
 
 
+def percentile_bin_buckets(values: pd.Series, n_bins: int = 10, prefix: str = "bin") -> pd.DataFrame:
+    """One boolean column per percentile bin of `values` (default: deciles).
+
+    Bin 1 = lowest values, bin `n_bins` = highest. Unlike the extreme-only
+    flags above (top/bottom 10%, "is this unusual"), this partitions the
+    *entire* range — for questions like "does accuracy trend monotonically
+    with X" (Week 7: does forecast error/calibration trend with embedded
+    renewable output) rather than just "is X's tail different from
+    typical" (Week 6).
+    """
+    ranks = pd.qcut(values, n_bins, labels=False, duplicates="drop") + 1
+    n_actual_bins = int(ranks.max())
+    return pd.DataFrame(
+        {f"{prefix}_q{i}": (ranks == i) for i in range(1, n_actual_bins + 1)},
+        index=values.index,
+    )
+
+
 def build_day_type_buckets(
     temperature_c: pd.Series, wind_capacity_factor: pd.Series
 ) -> pd.DataFrame:

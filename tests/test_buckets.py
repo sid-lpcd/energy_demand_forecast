@@ -7,6 +7,7 @@ from edf.buckets import (
     is_weekend,
     month_relative_percentile_bucket,
     overall_percentile_bucket,
+    percentile_bin_buckets,
 )
 
 
@@ -65,3 +66,35 @@ def test_build_day_type_buckets_returns_expected_columns():
     assert set(result.columns) == expected_columns
     assert list(result.index) == list(index)
     assert result["is_cold"].dtype == bool
+
+
+def test_percentile_bin_buckets_partitions_evenly_and_exhaustively():
+    values = pd.Series(range(100), dtype=float)
+
+    result = percentile_bin_buckets(values, n_bins=5, prefix="renewable")
+
+    assert set(result.columns) == {f"renewable_q{i}" for i in range(1, 6)}
+    # every row belongs to exactly one bin
+    assert (result.sum(axis=1) == 1).all()
+    # each bin has an equal share (100 values, 5 even bins -> 20 each)
+    assert (result.sum(axis=0) == 20).all()
+
+
+def test_percentile_bin_buckets_orders_bins_low_to_high():
+    values = pd.Series(range(10), dtype=float)
+
+    result = percentile_bin_buckets(values, n_bins=2, prefix="x")
+
+    # lowest values (0-4) should be in bin 1, highest (5-9) in bin 2
+    assert result.loc[result["x_q1"]].index.tolist() == list(range(5))
+    assert result.loc[result["x_q2"]].index.tolist() == list(range(5, 10))
+
+
+def test_percentile_bin_buckets_drops_degenerate_bins_on_heavy_ties():
+    # almost all zeros -> can't form 10 distinct quantile edges
+    values = pd.Series([0.0] * 95 + list(range(1, 6)))
+
+    result = percentile_bin_buckets(values, n_bins=10, prefix="x")
+
+    assert result.shape[1] < 10
+    assert (result.sum(axis=1) == 1).all()
