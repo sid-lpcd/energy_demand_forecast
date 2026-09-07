@@ -6,7 +6,9 @@ from edf.evaluate import (
     bias,
     compare_models,
     evaluate,
+    evaluate_by_bucket,
     evaluate_by_fold,
+    evaluate_quantiles_by_bucket,
     interval_sharpness,
     mae,
     mape,
@@ -170,3 +172,58 @@ def test_compare_models_uses_seasonal_naive_per_fold_mae_as_mase_denominator():
     assert result.loc[("seasonal_naive", 2024), "mase"] == pytest.approx(1.0)
     # A model with half the seasonal-naive's error scores MASE == 0.5.
     assert result.loc[("better_model", 2024), "mase"] == pytest.approx(0.5)
+
+
+def test_evaluate_by_bucket_scores_all_row_and_each_bucket():
+    index = pd.date_range("2024-01-01", periods=4, freq="30min", tz="UTC")
+    y_true = pd.Series([10.0, 20.0, 30.0, 40.0], index=index)
+    y_pred = pd.Series([12.0, 18.0, 33.0, 44.0], index=index)
+    buckets = pd.DataFrame(
+        {"is_cold": [True, True, False, False], "is_weekend": [False, True, True, False]},
+        index=index,
+    )
+
+    result = evaluate_by_bucket(y_true, y_pred, buckets)
+
+    assert list(result.index) == ["all", "is_cold", "is_weekend"]
+    assert result.loc["all", "n"] == 4
+    assert result.loc["is_cold", "n"] == 2
+    assert result.loc["is_cold", "mae"] == pytest.approx((2 + 2) / 2)
+    assert result.loc["is_weekend", "n"] == 2
+    assert result.loc["is_weekend", "mae"] == pytest.approx((2 + 3) / 2)
+
+
+def test_evaluate_by_bucket_uses_per_bucket_seasonal_naive_mae():
+    index = pd.date_range("2024-01-01", periods=4, freq="30min", tz="UTC")
+    y_true = pd.Series([10.0, 20.0, 30.0, 40.0], index=index)
+    y_pred = pd.Series([11.0, 21.0, 31.0, 41.0], index=index)  # error 1 everywhere
+    # naive is nearly exact in the cold bucket, way off outside it
+    naive = pd.Series([10.1, 20.1, 0.0, 0.0], index=index)
+    buckets = pd.DataFrame({"is_cold": [True, True, False, False]}, index=index)
+
+    result = evaluate_by_bucket(y_true, y_pred, buckets, seasonal_naive_pred=naive)
+
+    # naive MAE is tiny in is_cold -> MASE there is much larger than 1
+    assert result.loc["is_cold", "mase"] > 1.0
+    # naive MAE outside is_cold is large, so MASE there is small
+    assert result.loc["all", "mase"] < 1.0
+
+
+def test_evaluate_quantiles_by_bucket_reports_pinball_and_picp_per_bucket():
+    index = pd.date_range("2024-01-01", periods=4, freq="30min", tz="UTC")
+    y_true = pd.Series([10.0, 20.0, 30.0, 40.0], index=index)
+    quantile_preds = {
+        0.1: pd.Series([5.0, 15.0, 25.0, 35.0], index=index),
+        0.5: pd.Series([10.0, 20.0, 30.0, 40.0], index=index),
+        0.9: pd.Series([15.0, 25.0, 35.0, 45.0], index=index),
+    }
+    buckets = pd.DataFrame({"is_cold": [True, True, False, False]}, index=index)
+
+    result = evaluate_quantiles_by_bucket(y_true, quantile_preds, buckets)
+
+    assert list(result.index) == ["all", "is_cold"]
+    assert {"pinball_0.1", "pinball_0.5", "pinball_0.9", "picp", "n"}.issubset(result.columns)
+    # actual is always inside [P10, P90] in this fixture -> PICP == 1.0 everywhere
+    assert result.loc["all", "picp"] == pytest.approx(1.0)
+    assert result.loc["is_cold", "picp"] == pytest.approx(1.0)
+    assert result.loc["is_cold", "n"] == 2

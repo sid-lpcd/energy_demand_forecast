@@ -120,6 +120,58 @@ def interval_sharpness(lower: pd.Series, upper: pd.Series) -> float:
     return float((upper - lower).mean())
 
 
+def evaluate_by_bucket(
+    y_true: pd.Series,
+    y_pred: pd.Series,
+    buckets: pd.DataFrame,
+    seasonal_naive_pred: pd.Series | None = None,
+) -> pd.DataFrame:
+    """Score (y_true, y_pred) restricted to each boolean column in `buckets`
+    (Week 6 day-type flags — not mutually exclusive, a row can be in
+    several), plus an `"all"` row for the unrestricted reference.
+
+    If `seasonal_naive_pred` is given, each bucket's MASE is scaled by
+    *that bucket's own* seasonal-naive MAE, not one overall value — so a
+    bucket's MASE reflects whether the model struggles more there than the
+    naive baseline also would, not just a shift in absolute error size.
+    """
+    rows = {}
+    for name in ["all", *buckets.columns]:
+        mask = pd.Series(True, index=y_true.index) if name == "all" else buckets[name]
+        naive_mae = (
+            evaluate(y_true[mask], seasonal_naive_pred[mask])["mae"]
+            if seasonal_naive_pred is not None
+            else None
+        )
+        rows[name] = evaluate(y_true[mask], y_pred[mask], seasonal_naive_mae=naive_mae)
+    return pd.DataFrame(rows).T
+
+
+def evaluate_quantiles_by_bucket(
+    y_true: pd.Series,
+    quantile_preds: dict[float, pd.Series],
+    buckets: pd.DataFrame,
+    low_alpha: float = 0.1,
+    high_alpha: float = 0.9,
+) -> pd.DataFrame:
+    """Pinball loss per quantile + PICP[low_alpha, high_alpha], restricted
+    to each bucket in `buckets` (plus an `"all"` row).
+    """
+    rows = {}
+    for name in ["all", *buckets.columns]:
+        mask = pd.Series(True, index=y_true.index) if name == "all" else buckets[name]
+        row = {
+            f"pinball_{alpha}": pinball_loss(y_true[mask], pred[mask], alpha)
+            for alpha, pred in quantile_preds.items()
+        }
+        row["picp"] = picp(
+            y_true[mask], quantile_preds[low_alpha][mask], quantile_preds[high_alpha][mask]
+        )
+        row["n"] = int(mask.sum())
+        rows[name] = row
+    return pd.DataFrame(rows).T
+
+
 def yearly_folds(index: pd.DatetimeIndex) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
     """(start, end) boundaries for one fold per calendar year present in `index`.
 
