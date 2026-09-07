@@ -7,10 +7,14 @@ from edf.evaluate import (
     compare_models,
     evaluate,
     evaluate_by_fold,
+    interval_sharpness,
     mae,
     mape,
     mase,
     p95_abs_error,
+    picp,
+    pinball_loss,
+    quantile_coverage,
     rmse,
     yearly_folds,
 )
@@ -63,6 +67,49 @@ def test_p95_abs_error_matches_quantile_of_absolute_errors():
     y_true = pd.Series(range(100), dtype=float)
     y_pred = pd.Series([0.0] * 100)  # absolute error == y_true itself, 0..99
     assert p95_abs_error(y_true, y_pred) == pytest.approx(y_true.quantile(0.95))
+
+
+def test_pinball_loss_zero_for_perfect_prediction():
+    y_true = pd.Series([10.0, 20.0, 30.0])
+    assert pinball_loss(y_true, y_true, alpha=0.1) == pytest.approx(0.0)
+    assert pinball_loss(y_true, y_true, alpha=0.9) == pytest.approx(0.0)
+
+
+def test_pinball_loss_penalizes_underprediction_more_at_high_alpha():
+    # at alpha=0.9, under-predicting (forecast below actual) should cost
+    # more than over-predicting by the same margin -- that asymmetry is
+    # exactly what makes alpha=0.9 training converge to the 90th percentile.
+    y_true = pd.Series([100.0])
+    under = pinball_loss(y_true, pd.Series([90.0]), alpha=0.9)  # 10 below actual
+    over = pinball_loss(y_true, pd.Series([110.0]), alpha=0.9)  # 10 above actual
+    assert under > over
+
+
+def test_pinball_loss_penalizes_overprediction_more_at_low_alpha():
+    y_true = pd.Series([100.0])
+    under = pinball_loss(y_true, pd.Series([90.0]), alpha=0.1)
+    over = pinball_loss(y_true, pd.Series([110.0]), alpha=0.1)
+    assert over > under
+
+
+def test_quantile_coverage_matches_fraction_at_or_below():
+    y_true = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
+    y_pred_quantile = pd.Series([3.0] * 5)  # 3 of 5 actuals are <= 3
+    assert quantile_coverage(y_true, y_pred_quantile) == pytest.approx(0.6)
+
+
+def test_picp_counts_actuals_inside_the_interval():
+    y_true = pd.Series([1.0, 5.0, 10.0, 15.0, 20.0])
+    lower = pd.Series([2.0] * 5)
+    upper = pd.Series([16.0] * 5)
+    # 5, 10, 15 fall inside [2, 16]; 1 and 20 don't
+    assert picp(y_true, lower, upper) == pytest.approx(3 / 5)
+
+
+def test_interval_sharpness_is_mean_width():
+    lower = pd.Series([10.0, 20.0])
+    upper = pd.Series([15.0, 40.0])
+    assert interval_sharpness(lower, upper) == pytest.approx((5.0 + 20.0) / 2)
 
 
 def test_evaluate_drops_nan_rows_before_scoring():

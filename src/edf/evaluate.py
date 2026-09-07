@@ -76,6 +76,50 @@ def evaluate(
     return metrics
 
 
+def pinball_loss(y_true: pd.Series, y_pred: pd.Series, alpha: float) -> float:
+    """Quantile (pinball) loss at quantile level `alpha` (0 < alpha < 1).
+
+    Asymmetric: under- and over-prediction are penalized in proportion to
+    `alpha` vs. `1 - alpha`, so the loss is minimized exactly at the true
+    alpha-quantile of the conditional distribution — this asymmetry is the
+    whole reason training with it produces calibrated quantiles at all,
+    rather than just another point estimate.
+    """
+    error = y_true - y_pred
+    return float(np.maximum(alpha * error, (alpha - 1) * error).mean())
+
+
+def quantile_coverage(y_true: pd.Series, y_pred_quantile: pd.Series) -> float:
+    """Fraction of actuals at or below a predicted quantile.
+
+    Should equal that quantile's `alpha` if the model is well calibrated —
+    the building block for a reliability diagram (nominal alpha on one
+    axis, this observed value on the other).
+    """
+    return float((y_true <= y_pred_quantile).mean())
+
+
+def picp(y_true: pd.Series, lower: pd.Series, upper: pd.Series) -> float:
+    """Prediction interval coverage probability: the fraction of actuals
+    falling inside [lower, upper]. For a nominal interval (e.g. P10/P90,
+    nominally 80%), a well-calibrated model's PICP should sit close to that
+    nominal level — well below it means the interval is too narrow
+    (overconfident), well above means too wide (underconfident).
+    """
+    return float(((y_true >= lower) & (y_true <= upper)).mean())
+
+
+def interval_sharpness(lower: pd.Series, upper: pd.Series) -> float:
+    """Mean prediction-interval width.
+
+    A well-calibrated but very wide interval is less useful than a narrow
+    one, so this is always reported alongside `picp`, never instead of it —
+    calibration alone can't tell a genuinely sharp forecast from one that's
+    just wide enough to "cover" anything.
+    """
+    return float((upper - lower).mean())
+
+
 def yearly_folds(index: pd.DatetimeIndex) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
     """(start, end) boundaries for one fold per calendar year present in `index`.
 
