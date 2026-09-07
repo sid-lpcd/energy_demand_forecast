@@ -25,7 +25,7 @@ MLRUNS_DIR = REPO_ROOT / "mlruns"
 # equivalent for a single-user, no-server setup.
 DEFAULT_TRACKING_URI = f"sqlite:///{MLRUNS_DIR / 'mlflow.db'}"
 
-METRIC_COLUMNS = ("mae", "rmse", "mape", "mase")
+METRIC_COLUMNS = ("mae", "rmse", "mape", "mase", "bias", "p95_abs_error")
 
 
 def experiment_name(horizon_name: str) -> str:
@@ -39,18 +39,23 @@ def log_model_run(
     fold_metrics: pd.DataFrame,
     tracking_uri: str | None = None,
     extra_tags: dict[str, str] | None = None,
+    extra_params: dict[str, object] | None = None,
+    extra_metrics: dict[str, float] | None = None,
 ) -> None:
     """Log one (horizon, model) run: per-fold metric curves plus their mean.
 
     `fold_metrics` is one model's per-year rows from
-    `edf.evaluate.compare_models` (index: year; columns: mae/rmse/mape/mase),
-    e.g. `results.xs(model_name, level="model")`. Per-fold values are logged
-    with `step=year` so MLflow can plot them as a curve; `mean_*` keys hold
-    the aggregate used for cross-model/cross-horizon comparison, kept
-    separately named so they aren't mistaken for "the last fold's value".
+    `edf.evaluate.compare_models` (index: year; columns from `edf.evaluate.evaluate`,
+    e.g. mae/rmse/mape/mase/bias/p95_abs_error), e.g.
+    `results.xs(model_name, level="model")`. Per-fold values are logged with
+    `step=year` so MLflow can plot them as a curve; `mean_*` keys hold the
+    aggregate used for cross-model/cross-horizon comparison, kept separately
+    named so they aren't mistaken for "the last fold's value".
     `extra_tags` (e.g. `{"strategy": "recursive"}`) is merged in alongside
     the standard horizon/model tags, for runs that need another dimension to
-    stay distinguishable within one horizon's experiment.
+    stay distinguishable within one horizon's experiment. `extra_params`
+    (e.g. tuned hyperparameters) and `extra_metrics` (e.g. `train_seconds`,
+    a single scalar rather than a per-fold series) are logged as-is.
     """
     if tracking_uri is None:
         MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
@@ -61,6 +66,8 @@ def log_model_run(
         mlflow.set_tags({"horizon": horizon_name, "model": model_name, **(extra_tags or {})})
         mlflow.log_param("horizon_periods", horizon_periods)
         mlflow.log_param("n_folds", len(fold_metrics))
+        if extra_params:
+            mlflow.log_params(extra_params)
 
         present_columns = [c for c in METRIC_COLUMNS if c in fold_metrics.columns]
         for year, row in fold_metrics.iterrows():
@@ -71,3 +78,5 @@ def log_model_run(
 
         means = fold_metrics[present_columns].mean()
         mlflow.log_metrics({f"mean_{name}": float(value) for name, value in means.items()})
+        if extra_metrics:
+            mlflow.log_metrics(extra_metrics)

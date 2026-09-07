@@ -270,6 +270,32 @@ line.
   sensible result even though it wasn't the anticipated one. `lag_48` (same lag as the horizon
   itself), weekly structure (`fourier_weekly_*`/`day_of_week`), and both trailing-average baseline
   features rank next; `lag_336`/`hour_of_day` matter but rank lower than expected.
+- **Hyperparameter tuning (done), `src/edf/tuning.py`, `notebooks/07_lightgbm_tuned.ipynb`:**
+  randomized walk-forward CV search (`num_leaves`/`learning_rate`/`min_child_samples`, 10 trials)
+  entirely inside `TRAIN` (2020-2023) — expanding-window folds (train 2020→validate 2021, train
+  2020-21→validate 2022, train 2020-22→validate 2023), each candidate's tree count chosen by early
+  stopping *within* its CV fold, with the final model's `n_estimators` fixed from the average
+  stopped iteration across folds before it's ever retrained on the full `TRAIN` set. `VALIDATION`
+  is never touched during search — early-stopping directly against it would let the exact set used
+  for final reporting quietly influence model selection.
+  - **Two more metrics added, `edf.evaluate`:** `bias` (mean signed error — MAE/RMSE only see error
+    magnitude, this catches systematic over/under-forecasting) and `p95_abs_error` (a cheap
+    tail-risk read, ahead of Week 6). `edf.tracking.log_model_run` gained `extra_params`/
+    `extra_metrics` for logging tuned hyperparameters and wall-clock tune/train time.
+  - **Tuning helped direct models at every horizon** (MASE: `30min` 0.105→0.102, `1d` 0.623→0.606,
+    `7d` 0.782→0.754) but **made the recursive strategy worse at `1d`/`7d`** (0.634→0.652,
+    0.824→0.863) — only `1h` (effectively still one step) improved. **Finding worth keeping, not a
+    bug:** the tuning objective was the `30min` model's own one-step CV error, which has no reason
+    to favor hyperparameters that are also robust to being recursively chained — the winning
+    config fits the one-step problem more tightly, plausibly leaning harder on `lag_1`/`lag_2`,
+    exactly the features that turn synthetic soonest under recursion. Reinforces (with a second,
+    independent reason beyond compounding error) that direct per-horizon models are the better
+    choice past a couple of steps.
+  - **Bias/tail metrics reveal structure MASE alone hides:** `7d` direct is the most *biased*
+    strategy (≈ -116 MW, consistently over-forecasting) despite having the better MASE of the two
+    `7d` strategies; `7d` recursive is far less biased (≈ -22 MW) but has a fatter tail
+    (P95 ≈ 5133 MW vs. ≈ 4102 MW) — scattered rather than systematically skewed errors. At `1h`,
+    recursive wins on both MASE *and* tail error — a clean win there, not just a marginal one.
 
 ## Week 4 — Weather
 

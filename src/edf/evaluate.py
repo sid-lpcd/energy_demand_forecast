@@ -38,20 +38,37 @@ def mase(y_true: pd.Series, y_pred: pd.Series, seasonal_naive_mae: float) -> flo
     return mae(y_true, y_pred) / seasonal_naive_mae
 
 
+def bias(y_true: pd.Series, y_pred: pd.Series) -> float:
+    """Mean signed error (actual - forecast). +ve = under-forecasting on average,
+    -ve = over-forecasting. MAE/RMSE only see error *magnitude*, so a model can
+    have a small MAE while still being systematically off in one direction —
+    this is what catches that."""
+    return float((y_true - y_pred).mean())
+
+
+def p95_abs_error(y_true: pd.Series, y_pred: pd.Series) -> float:
+    """95th percentile of absolute error — a cheap tail-risk read: how bad are
+    this model's worst-case misses, not just its typical one (MAE/RMSE)."""
+    return float((y_true - y_pred).abs().quantile(0.95))
+
+
 def evaluate(
     y_true: pd.Series, y_pred: pd.Series, seasonal_naive_mae: float | None = None
 ) -> dict[str, float]:
-    """MAE/RMSE/MAPE (and MASE, if a seasonal-naive MAE is supplied) over one window.
+    """MAE/RMSE/MAPE/bias/P95 error (and MASE, if a seasonal-naive MAE is given).
 
     Rows where either series is NaN — e.g. a baseline's warm-up period, before
     its longest lag reaches back to the start of the data — are dropped
     before scoring.
     """
     aligned = pd.DataFrame({"y_true": y_true, "y_pred": y_pred}).dropna()
+    y_t, y_p = aligned["y_true"], aligned["y_pred"]
     metrics = {
-        "mae": mae(aligned["y_true"], aligned["y_pred"]),
-        "rmse": rmse(aligned["y_true"], aligned["y_pred"]),
-        "mape": mape(aligned["y_true"], aligned["y_pred"]),
+        "mae": mae(y_t, y_p),
+        "rmse": rmse(y_t, y_p),
+        "mape": mape(y_t, y_p),
+        "bias": bias(y_t, y_p),
+        "p95_abs_error": p95_abs_error(y_t, y_p),
         "n": float(len(aligned)),
     }
     if seasonal_naive_mae is not None:

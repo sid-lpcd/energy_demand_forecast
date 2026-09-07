@@ -3,12 +3,14 @@ import pandas as pd
 import pytest
 
 from edf.evaluate import (
+    bias,
     compare_models,
     evaluate,
     evaluate_by_fold,
     mae,
     mape,
     mase,
+    p95_abs_error,
     rmse,
     yearly_folds,
 )
@@ -36,6 +38,31 @@ def test_mase_scales_by_seasonal_naive_mae():
     y_true = pd.Series([10.0, 20.0])
     y_pred = pd.Series([12.0, 18.0])
     assert mase(y_true, y_pred, seasonal_naive_mae=4.0) == pytest.approx(2.0 / 4.0)
+
+
+def test_bias_sign_convention_positive_means_under_forecasting():
+    y_true = pd.Series([10.0, 20.0])
+    y_pred = pd.Series([8.0, 16.0])  # forecast consistently below actual
+    assert bias(y_true, y_pred) == pytest.approx((2 + 4) / 2)
+
+
+def test_bias_sign_convention_negative_means_over_forecasting():
+    y_true = pd.Series([10.0, 20.0])
+    y_pred = pd.Series([12.0, 24.0])  # forecast consistently above actual
+    assert bias(y_true, y_pred) == pytest.approx((-2 - 4) / 2)
+
+
+def test_bias_zero_for_unbiased_but_noisy_forecast():
+    y_true = pd.Series([10.0, 20.0])
+    y_pred = pd.Series([8.0, 22.0])  # errors cancel out, despite nonzero MAE
+    assert bias(y_true, y_pred) == pytest.approx(0.0)
+    assert mae(y_true, y_pred) == pytest.approx(2.0)
+
+
+def test_p95_abs_error_matches_quantile_of_absolute_errors():
+    y_true = pd.Series(range(100), dtype=float)
+    y_pred = pd.Series([0.0] * 100)  # absolute error == y_true itself, 0..99
+    assert p95_abs_error(y_true, y_pred) == pytest.approx(y_true.quantile(0.95))
 
 
 def test_evaluate_drops_nan_rows_before_scoring():

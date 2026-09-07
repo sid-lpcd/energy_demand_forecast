@@ -66,3 +66,49 @@ def test_log_model_run_merges_extra_tags(tmp_path):
 
     assert run["tags.strategy"] == "recursive"
     assert run["tags.horizon"] == "7d"
+
+
+def test_log_model_run_logs_extra_params_and_metrics(tmp_path):
+    tracking_uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    fold_metrics = pd.DataFrame({"mae": [10.0]}, index=pd.Index([2024], name="year"))
+
+    log_model_run(
+        horizon_name="1d",
+        horizon_periods=48,
+        model_name="lightgbm",
+        fold_metrics=fold_metrics,
+        tracking_uri=tracking_uri,
+        extra_params={"num_leaves": 63, "learning_rate": 0.05},
+        extra_metrics={"train_seconds": 4.2},
+    )
+
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment = mlflow.get_experiment_by_name("forecast-1d")
+    run = mlflow.search_runs(experiment_ids=[experiment.experiment_id]).iloc[0]
+
+    assert run["params.num_leaves"] == "63"
+    assert run["params.learning_rate"] == "0.05"
+    assert run["metrics.train_seconds"] == 4.2
+
+
+def test_log_model_run_includes_bias_and_p95_when_present(tmp_path):
+    tracking_uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    fold_metrics = pd.DataFrame(
+        {"mae": [10.0], "bias": [-2.5], "p95_abs_error": [30.0]},
+        index=pd.Index([2024], name="year"),
+    )
+
+    log_model_run(
+        horizon_name="1d",
+        horizon_periods=48,
+        model_name="lightgbm",
+        fold_metrics=fold_metrics,
+        tracking_uri=tracking_uri,
+    )
+
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment = mlflow.get_experiment_by_name("forecast-1d")
+    run = mlflow.search_runs(experiment_ids=[experiment.experiment_id]).iloc[0]
+
+    assert run["metrics.mean_bias"] == -2.5
+    assert run["metrics.mean_p95_abs_error"] == 30.0
