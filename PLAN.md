@@ -528,27 +528,47 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
   ("LightGBM quantile regression vs. a distributional alternative... for calibration
   robustness") — this result is what motivates that stretch goal, not a gap to paper over.
 
-## Week 6 — Extreme Events
+## Week 6 — Extreme Events (done)
 
-- Define day-type buckets explicitly and reproducibly (e.g. cold = mean temp below the 10th
-  percentile for that month, hot = above 90th, high/low wind = generation percentile, Christmas =
-  fixed date range, weekend = calendar) — put the thresholds in code, not eyeballed.
-- Evaluate the Week 3 point model *and* the Week 5 probabilistic model separately per bucket:
-  MAE/RMSE/MASE and pinball loss/PICP per bucket.
-- The likely interesting finding: point accuracy may hold up reasonably on extreme days, but
-  **calibration (PICP) is the one that tends to break down in the tails** — that mismatch, if you
-  find it, is worth a dedicated paragraph in the final report.
-- **COVID lockdown stress test (retrospective, not a primary test-set metric):** since 2020–2021
-  falls inside the *training* window, not validation/test, this isn't a held-out accuracy number —
-  it's a qualitative case study. Using the `lockdown_level` feature from Week 1, pull the Week 2
-  baselines' and Week 3/5 model's retrospective predictions for `full` and `partial` days in
-  2020–2021 and compare against what actually happened. The expected finding: every method,
-  naive-baseline or ML, was blindsided by the initial demand collapse in March 2020 — no
-  calendar/lag feature could have anticipated a legally-mandated behavioural shock. That's a
-  genuinely useful, honest result: it shows *where forecasting has hard limits* regardless of model
-  sophistication, which is a stronger and more credible finding than only reporting wins.
-- **Deliverable:** per-bucket metrics table + commentary on where the model is least trustworthy,
-  plus a short write-up (with plots) of the COVID case study for use in Week 8.
+- **Day-type buckets (done), `src/edf/buckets.py`:** six independent boolean flags (not a
+  mutually-exclusive partition), thresholds in code — `is_cold`/`is_hot` (month-relative
+  temperature percentile, 10th/90th, so "cold" means unusually cold *for the time of year*, not
+  just "a winter day"), `is_low_wind`/`is_high_wind` (overall wind capacity-factor percentile —
+  no month-relativity needed, these exist to capture genuinely extreme embedded-generation
+  periods), `is_christmas` (Dec 24-Jan 1, wraps the year boundary), `is_weekend`.
+- **Per-bucket evaluation harness (done), `src/edf/evaluate.py`:** `evaluate_by_bucket`
+  (MAE/RMSE/MASE/bias, using each bucket's *own* seasonal-naive MAE as its MASE denominator, not
+  one overall value) and `evaluate_quantiles_by_bucket` (pinball loss per quantile + PICP).
+  Evaluated on `notebooks/13_extreme_events.ipynb`'s `1d` point model and Week 5's quantile
+  models — reusing their already-tuned hyperparameters, no new tuning.
+- **Point accuracy holds up on weather extremes** (MASE close to or better than the 0.44 overall
+  figure for `is_cold`/`is_hot`/`is_low_wind`/`is_high_wind`) but **the model systematically
+  over-forecasts on every demand-suppressing extreme** — `is_hot` (bias -560 MW), `is_high_wind`
+  (-796 MW), `is_christmas` (-1242 MW) — while demand-boosting/neutral buckets show small
+  positive bias. Only `is_christmas`/`is_weekend` (calendar-, not weather-driven) are clearly
+  harder on MASE.
+- **PICP collapses exactly where bias is worst** — `is_hot` PICP 0.558, `is_christmas` PICP
+  0.426, both far below the already-low 0.652 overall (`notebooks/12`). **Confirms PLAN's
+  anticipated pattern exactly, and reveals the mechanism**: a systematic over-forecast pulls the
+  *entire* quantile band upward, so actual demand falls below even P10 more often — bias and
+  tail-miscalibration are the same finding, not two separate ones. `is_low_wind` (near-zero
+  bias) is the one bucket *better* calibrated than average (PICP 0.709), consistent with this.
+- **COVID case study (done):** the naive-only within-2020 before/after comparison is misleading
+  (mixes the COVID effect with the ordinary Feb→May seasonal trend that always weakens
+  `previous_week_same_time`) — the correct comparison is the same calendar window across years.
+  That isolated comparison shows **naive genuinely blindsided** (2020 MAE 3101 vs. 2396/2511 in
+  2022/2023, ~25-30% worse — a real, isolated COVID effect) but **the point model essentially
+  unaffected** (674 vs. 634/667 — within normal year-to-year variation), contradicting PLAN's
+  prior expectation ("every method... was blindsided") for the ML model specifically. **Honest
+  reason, not a win**: the model is trained on 2020-2021 data, so it had the chance to fit this
+  exact historical pattern directly — unlike a live forecaster with zero warning before 23 March
+  2020. This is the case-study limitation PLAN.md itself already flags ("not a held-out accuracy
+  number"), now made concrete. Visually confirmed: naive stays pinned near pre-lockdown levels
+  for ~1 week after the announcement (its own "last week" reference hasn't seen the lockdown
+  yet) while the point model tracks the collapse almost immediately — a purely mechanical,
+  train/test-independent limitation of persistence-based forecasting.
+- **Deliverable (done):** `notebooks/13_extreme_events.ipynb` — per-bucket metrics tables +
+  commentary + the COVID case study with plots, ready for Week 8.
 
 ## Week 7 — Renewable / Net Demand
 
