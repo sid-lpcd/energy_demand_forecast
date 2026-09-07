@@ -752,6 +752,35 @@ before delivery, matching what would genuinely have been available at prediction
   fallback for whenever NDF is unavailable, plus the modest trough-specific bias reduction the
   correction does provide.
 
+### Follow-up 3: other candidate features — one ruled out, one tested and null
+
+Broader "what else could help" pass beyond large events and NDF. Three ideas scoped:
+
+- **Heating/cooling degree-days**: turned out to already be implemented (`weather_features.py`,
+  `heating_degree`/`cooling_degree`) and already included in every model built this session via
+  `build_weather_feature_table` — not a new idea, already in use.
+- **NESO's Demand Flexibility Service (DFS) events**: checked NESO's own live-event data
+  directly rather than assuming it'd be useful. The entire 2022/23 archive is 2 live events
+  (2023-01-23/24, 5 half-hourly periods total,
+  [NESO data portal](https://www.neso.energy/data-portal/demand-flexibility-service-live-events)),
+  and reporting confirms winter 2023/24 had no live activations (mild weather) — the year-round
+  service only started 2024-11-27, right at the tail of VALIDATION. **Ruled out, not built**:
+  VALIDATION (2024) has essentially zero events to evaluate against, so this isn't testable in
+  this project's fixed split, regardless of whether the underlying effect is real.
+- **Solar elevation angle as a demand feature** (`notebooks/19_solar_elevation_demand_feature.ipynb`):
+  reused the already-tested `generation_features.solar_elevation_deg` (previously only used for
+  the wind/solar generation model) as a demand feature — free, deterministic, zero new data.
+  **Near-null result**: overall MAE is a wash (885.70 → 887.08, marginally worse); at the
+  twilight regime specifically (`0 < solar_elevation_deg <= 10`, n=1,913) MAE is unchanged
+  (810.70 → 810.14) but bias improves ~19% (-119.31 → -96.86). Feature importance rank 21/32 —
+  barely used. Likely explanation: the existing `hour_of_day`/`month` categoricals plus
+  daily/annual Fourier terms already encode most of the same seasonal-daylight information, so
+  this is largely redundant rather than new signal. **Not adopted** as a standard feature.
+
+**Takeaway across all three follow-ups (fuel-mix, NDF, this one)**: this model's from-scratch
+feature set looks close to saturated for what's freely and legitimately available — NDF itself
+remains the highest-leverage lever found, not further feature engineering on our own model.
+
 ## Week 8 — Publish + Impact Estimate
 
 - GitHub repo: proper README, methodology, results, and an explicit **Limitations** section
