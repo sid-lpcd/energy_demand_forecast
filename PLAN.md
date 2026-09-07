@@ -430,6 +430,32 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
     distribution. Plausible cause: population-weighted weather (a documented Week 1 simplification)
     likely understates wind speed at actual (rural/coastal) wind-farm sites relative to city
     centres, especially during high-wind events. Noted as a real limitation, not fixed now.
+- **Solar capacity-factor model (done), `notebooks/10_solar_capacity_factor.ipynb`:**
+  `edf.generation_features.solar_elevation_deg` computes solar elevation directly from
+  timestamp + a population-weighted GB centroid (standard declination/hour-angle formula, no new
+  dependency, no API call) — a deterministic ceiling feature, verified against the textbook
+  solstice-noon check (90 − lat ± 23.45°) and against midnight being exactly 0. Combined with
+  `cloud_cover_pct`/`shortwave_radiation_wm2` (weather-driven component) and the existing
+  `solar_eclipse_pct` canonical column.
+  - **Result:** MAE 0.0162 vs. the seasonal-naive baseline's 0.0383 — a **57.7% reduction** (MASE
+    0.422), essentially the same relative gain as wind (58%), but a visibly different *fit
+    character*: night-time zeros are captured exactly and daytime peaks track actual generation
+    tightly (including day-to-day cloud variation), unlike wind's peak-underestimation. Confirms
+    the stated hypothesis — the deterministic ceiling genuinely makes solar easier to fit well
+    than wind, given a forecast.
+  - **Honest check — the one case where day-ahead genuinely underperforms ERA5:** MASE 0.422
+    (ERA5) → 0.470 (day-ahead), an 11.3% relative degradation, unlike the demand model and wind
+    (both showed day-ahead marginally *beating* ERA5, traced to noise/bias-cancellation). This is
+    the textbook-expected direction, and it's a useful cross-check that those two "surprising"
+    results weren't an evaluation-methodology bug — the same method gives the expected answer
+    here. Plausible physical reason: cloud formation is far more short-timescale/chaotic than
+    large-scale wind patterns, so a 24h-ahead cloud-cover/irradiance forecast has more genuine
+    skill to lose than a 24h-ahead wind-speed forecast. Still small next to the seasonal-naive
+    baseline (1.0) — most of the gain survives, just not "almost all" the way it did for wind/demand.
+  - **Metric pitfall confirmed:** `mape` is `inf` for this target (solar capacity factor is
+    exactly zero for roughly half of every day, and `mape` divides by the actual value) — worse
+    than wind's near-zero-but-nonzero case. MAE/RMSE/MASE are the only trustworthy numbers here;
+    worth remembering for Week 5's probabilistic work if other zero-heavy targets come up.
 
 ## Week 5 — Probabilistic Forecasting
 
