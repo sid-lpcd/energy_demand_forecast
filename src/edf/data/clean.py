@@ -12,6 +12,10 @@ columns decided in Week 1 (see PLAN.md "Canonical column decisions"):
   note; ND already has this effect invisibly baked in).
 - `interconnector` = sum of all `*_FLOW` columns (net GB import, +import/
   -export).
+- `wind_capacity`/`solar_capacity` = installed embedded capacity (public,
+  slow-moving, safe to treat as known ahead of time) — used with `wind`/
+  `solar` to compute capacity factor for the Week 4b generation-forecasting
+  models, not needed by the demand model itself.
 
 The raw exploration notebook (`notebooks/01_explore_raw_data.ipynb`) already
 checked the full 2020-2025 raw series for missing settlement periods and
@@ -73,8 +77,8 @@ def build_canonical_table(raw: pd.DataFrame) -> pd.DataFrame:
     `raw` is the frame produced by `edf.data.download.build_raw_parquet`
     (must have a UTC tz-aware `timestamp` column plus the NESO source
     columns). Returns a frame indexed by `timestamp` with `demand`, `wind`,
-    `solar`, `interconnector`, and the calendar/event/lockdown columns from
-    `build_calendar_features`.
+    `solar`, `interconnector`, `wind_capacity`, `solar_capacity`, and the
+    calendar/event/lockdown columns from `build_calendar_features`.
     """
     check_no_gaps(raw["timestamp"])
     check_no_negative_demand(raw["ND"])
@@ -86,6 +90,8 @@ def build_canonical_table(raw: pd.DataFrame) -> pd.DataFrame:
             "wind": raw["EMBEDDED_WIND_GENERATION"].to_numpy(),
             "solar": raw["EMBEDDED_SOLAR_GENERATION"].to_numpy(),
             "interconnector": raw[INTERCONNECTOR_FLOW_COLUMNS].sum(axis=1).to_numpy(),
+            "wind_capacity": raw["EMBEDDED_WIND_CAPACITY"].to_numpy(),
+            "solar_capacity": raw["EMBEDDED_SOLAR_CAPACITY"].to_numpy(),
         },
         index=index,
     )
