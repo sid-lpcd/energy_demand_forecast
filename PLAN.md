@@ -591,6 +591,24 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
     probabilistic model's calibration problem** — that remains open, and points more clearly at
     the stretch goal below (a genuinely distributional model / conformal prediction) as the right
     next step for calibration specifically, separate from bias-correction.
+  - **Isolated which lever actually caused the PICP regression**, via the same 4-way split
+    applied to the quantile models: `is_hot` PICP — A 0.558, B(+feature) 0.562, C(+weighting)
+    **0.515**, D(+both) 0.529; `is_high_wind` — A 0.609, B 0.590, C **0.570**, D 0.583;
+    `is_christmas` — A 0.426, B 0.414, C 0.414, D **0.384**. **Sample weighting is the dominant
+    cause** for `is_hot`/`is_high_wind` (a larger regression alone than the feature causes); the
+    `is_christmas` feature independently hurts `is_christmas` PICP too, despite being the lever
+    that *helped* its point bias. Neither lever is additive when combined — D is the worst
+    outcome for `is_christmas` specifically. Both levers *improve* overall PICP (0.652→0.664-
+    0.666) — calibration is being redistributed away from the extreme buckets toward the
+    majority of rows, the opposite of what was wanted. Plausible mechanism: fitting these rows'
+    point value more precisely also makes the model more "confident" (narrower) about them
+    specifically, since it now effectively sees more of them during training.
+  - **Decision: keep both interventions for the point model** (10-18% bias reduction in the
+    targeted buckets, no cost to overall accuracy). **Do not apply either to the quantile/
+    probabilistic model** — both measurably worsen calibration in exactly the buckets (extreme
+    events) where good calibration matters most, even though they improve the training objective
+    (pinball loss) and the aggregate PICP number. The metric that's easy to optimize and the
+    metric that actually matters point in different directions here, and the latter wins.
 
 ## Week 7 — Renewable / Net Demand
 
