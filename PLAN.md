@@ -102,8 +102,13 @@ line.
   - `interconnector` = sum of all `*_FLOW` columns (net GB import, +import/−export). Individual
     links are highly collinear (all driven by the same GB-vs-Europe price differential); the raw
     per-link columns remain available if link-specific analysis is ever needed.
-- Build the cleaned, canonical half-hourly table: `timestamp` (UTC, tz-aware), `demand`, `wind`,
-  `solar`, `interconnector`.
+- **Build the cleaned, canonical half-hourly table (done):** `src/edf/data/clean.py` joins the raw
+  demand data with the calendar/event features into `data/processed/gb_energy_2020_2025.parquet` —
+  indexed by `timestamp` (UTC, tz-aware), with `demand`, `wind`, `solar`, `interconnector`, plus
+  `is_bank_holiday`/`is_school_holiday`/`lockdown_level`/`event_tier`/`event_name`/
+  `solar_eclipse_pct`. `check_no_gaps`/`check_no_negative_demand` are regression guards for the
+  zero-gaps/zero-negative-demand finding from `notebooks/01_explore_raw_data.ipynb`, not repair
+  logic — nothing needed fixing. Tested in `tests/data/test_clean.py`.
 - Add a `lockdown_level` calendar feature (`none` / `partial` / `full`) for the COVID-19 stress-test
   work in Weeks 6/8, using England's national restriction timeline (Institute for Government,
   corroborated by the House of Commons Library — see Data sources) as a GB-wide proxy:
@@ -157,29 +162,42 @@ line.
   outliers, unit consistency (MW throughout). (Raw-data check already found zero gaps/duplicates/
   negative values across 2020–2025 — see the exploration notebook — so this step may mostly be
   confirming there's nothing left to do rather than fixing anything.)
-- Decide and document the train/validation/test split up front, e.g. train 2020–2023, validation
-  2024, test 2025 — fixed for the rest of the project so no week accidentally peeks at test data.
-  (COVID's acute disruption falls entirely inside the training window under this split, so reported
-  val/test accuracy isn't distorted by it — see Week 6 for how the training-time COVID period is
-  still put to use.)
+- **Train/validation/test split (done):** fixed in `src/edf/config.py` — train 2020–2023,
+  validation 2024, test 2025 — for the rest of the project so no week accidentally peeks at test
+  data. (COVID's acute disruption falls entirely inside the training window under this split, so
+  reported val/test accuracy isn't distorted by it — see Week 6 for how the training-time COVID
+  period is still put to use.)
 - Plot: full time series, one winter week and one summer week zoomed in, and a demand-by-hour /
   demand-by-day-of-week seasonality plot.
-- **Deliverable:** `data/processed/gb_energy_2020_2025.parquet` (with `lockdown_level`) + a
-  data-quality notebook + unit tests for the cleaning functions (missing-period handling, outlier
-  rules, timezone correctness, `lockdown_level` date-range assignment).
+- **Deliverable (done):** `data/processed/gb_energy_2020_2025.parquet` (with `lockdown_level`) +
+  `notebooks/01_explore_raw_data.ipynb` (data-quality checks + seasonality/winter-summer plots) +
+  unit tests for the cleaning functions (`tests/data/test_clean.py`, `tests/test_config.py`) —
+  missing-period handling, timezone correctness, `lockdown_level` date-range assignment. **Week 1 is
+  complete; Week 2 (baselines) is next.**
 
-## Week 2 — Baselines
+## Week 2 — Baselines (done)
 
-- Implement, as functions in `src/edf/baselines.py`:
-  - naive (last observed value)
-  - previous-day-same-time
-  - previous-week-same-time (seasonal naive — this becomes the MASE denominator)
-  - trailing moving average (e.g. mean of last 4 same-time-of-day observations)
-- Build the walk-forward evaluation harness once, in `src/edf/evaluate.py` — every later model
-  (Weeks 3–7) reuses this, it is not rewritten per week.
-- Report MAE, RMSE, MAPE, and MASE for each baseline, per split fold, not just a single aggregate
-  number.
-- **Deliverable:** a baseline comparison table/plot; this is the number every later week must beat.
+- **Baselines (done), `src/edf/baselines.py`:** naive (last observed value, t-1), previous-day-
+  same-time (t-48), previous-week-same-time (t-336, seasonal naive — the MASE denominator),
+  trailing moving average (mean of the last 4 same-half-hour-of-day values, `skipna=False` so a
+  partial-history warm-up row returns NaN rather than a silently weaker average). All pure lags of
+  `demand`, so none can leak the future. Tested in `tests/test_baselines.py`.
+- **Walk-forward evaluation harness (done), `src/edf/evaluate.py`:** `mae`/`rmse`/`mape`/`mase`,
+  `yearly_folds` (per-calendar-year fold boundaries), `evaluate_by_fold`, and `compare_models`
+  (scores multiple named prediction series per fold, using one model's per-fold MAE as that fold's
+  MASE denominator for every model). Built generically so Weeks 3–7 reuse it rather than
+  rewriting scoring logic. Tested in `tests/test_evaluate.py`.
+- **Deliverable (done):** `notebooks/04_baselines.ipynb` — per-year and aggregate MAE/RMSE/MAPE/
+  MASE table plus a MASE-by-year plot, evaluated only over `TRAIN`+`VALIDATION` (2020–2024);
+  `TEST` (2025) stays untouched per the correctness rules.
+- **Finding worth carrying into Week 3:** at half-hourly resolution, `naive` (t-1) scores
+  MASE ≈ 0.32–0.35 — far beating the seasonal baselines — because GB demand barely moves in 30
+  minutes. This is expected, not a result to present as-is: NESO's own day-ahead benchmark
+  (`edf.data.demand_forecast_benchmark`) forecasts a full day ahead, not 30 minutes ahead, so a
+  future model scored at t-1 lead time would be solving an easier problem and isn't comparable to
+  it. **Week 3 needs to fix an explicit forecast horizon (day-ahead, to match the NESO benchmark,
+  is the operationally relevant choice) before drawing that comparison**, rather than defaulting to
+  whichever lag features happen to be included.
 
 ## Week 3 — ML (LightGBM)
 
