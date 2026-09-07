@@ -569,6 +569,28 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
   train/test-independent limitation of persistence-based forecasting.
 - **Deliverable (done):** `notebooks/13_extreme_events.ipynb` — per-bucket metrics tables +
   commentary + the COVID case study with plots, ready for Week 8.
+- **Follow-up: can the extreme-bucket bias be fixed? (done), `notebooks/14_extreme_bucket_bias_fix.ipynb`:**
+  two targeted interventions — an `is_christmas` feature (Dec 24-Jan 1, broader than the
+  existing bank-holiday flags) and 3x sample-weighting (`edf.forecast.train_lightgbm` gained a
+  `sample_weight` param) on `is_hot`/`is_high_wind`/`is_christmas` training rows — compared via
+  4 point-model variants (baseline/+feature/+weighting/+both).
+  - **Each lever fixes its own bucket, and they don't stack additively.** The `is_christmas`
+    feature is the effective lever for Christmas bias (-1242→-1025 MW, 17.5% reduction;
+    weighting alone barely moves it, -1242→-1208); weighting is the effective lever for
+    `is_hot`/`is_high_wind` (-560→-501, -796→-686, ~11-14% reduction; the feature alone barely
+    moves these). Combining both is never the single best for any one bucket — a compromise
+    between the two specialised fixes. Overall accuracy barely moves throughout (MAE 884-891,
+    MASE 0.44) — the fixes are targeted, not a free general improvement.
+  - **Re-running the combined recipe for the quantile models found something more important than "did it work": pinball loss improved in every bucket, but PICP got *worse* in exactly the three targeted buckets** (`is_hot` 0.558→0.529, `is_high_wind` 0.609→0.583,
+    `is_christmas` 0.426→0.384) even as it improved overall (0.652→0.666). Reducing bias shifts
+    the whole quantile band toward the true centre (genuinely lower pinball loss) but if the
+    band's width doesn't widen correspondingly, a tighter-but-imperfectly-centred interval can
+    cover the truth *less* often — a concrete, instructive demonstration of why pinball loss and
+    PICP are evaluated separately (Week 5) rather than either alone standing in for calibration.
+    **Conclusion: this recipe is worth keeping for the point model, but does not fix the
+    probabilistic model's calibration problem** — that remains open, and points more clearly at
+    the stretch goal below (a genuinely distributional model / conformal prediction) as the right
+    next step for calibration specifically, separate from bias-correction.
 
 ## Week 7 — Renewable / Net Demand
 
