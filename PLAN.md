@@ -610,7 +610,7 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
     (pinball loss) and the aggregate PICP number. The metric that's easy to optimize and the
     metric that actually matters point in different directions here, and the latter wins.
 
-## Week 7 — Renewable / Net Demand
+## Week 7 — Renewable / Net Demand (done)
 
 Originally planned as `net_demand = demand - wind - solar`. That's now known to be wrong for this
 dataset: `wind`/`solar` here are *embedded* generation, already invisibly netted into `demand`
@@ -618,19 +618,38 @@ dataset: `wind`/`solar` here are *embedded* generation, already invisibly netted
 again double-counts the same effect and produces a number without a clean physical meaning — it is
 **not** the GB analogue of the CAISO "duck curve" net-load concept.
 
-- Instead, treat high estimated embedded-renewable output as **extra variance already sitting
-  inside the `demand` series itself**, and test whether forecast error concentrates there: bucket
-  half-hours (or days) by `wind + solar` percentile and compare MAE/RMSE/MASE and pinball
-  loss/PICP across buckets, the same way Week 6 buckets by weather/calendar extremes.
-- Connect to a real operational question: **is the model measurably less accurate — or less
-  calibrated — during high-embedded-renewable periods**, i.e. exactly when weather-driven
-  generation is adding the most unobserved variability to the demand signal?
-- **Stretch, not core:** a literal GB duck-curve/net-demand analysis is possible, but needs
-  *transmission-scale* wind/solar generation (which does directly add to the generation mix serving
-  `ND`, unlike embedded generation) — that would mean pulling Elexon BMRS fuel-mix data, out of
-  scope for the core 8-week plan.
-- **Deliverable:** per-embedded-renewable-percentile error table + analysis of whether/where
-  accuracy or calibration degrades as embedded wind/solar output rises.
+- **Done, `notebooks/15_renewable_net_demand.ipynb`:** bucketed `VALIDATION` by combined embedded
+  `wind + solar` output into deciles (`edf.buckets.percentile_bin_buckets`, new — Week 6's flags
+  only captured the top/bottom 10%; this Week 7 question needed the *whole* range to check for a
+  trend, not just the extremes), evaluated with the same harness as Week 6
+  (`evaluate_by_bucket`/`evaluate_quantiles_by_bucket`). Models used are the Week 6 follow-up's
+  kept decisions: point model = bias-corrected recipe (`is_christmas` feature + weighting);
+  quantile model = untouched Week 5 baseline (the corrected recipe was found to worsen PICP, so
+  never adopted there).
+  - **Point accuracy degrades smoothly and continuously across the entire range**, not just at
+    the extremes: MAE climbs from 558 MW (decile 1, lowest wind+solar) to 1417 MW (decile 10) —
+    2.5x worse. Bias crosses zero smoothly around decile 4-5, from +294 MW (under-forecast, low
+    renewable) to -1078 MW (over-forecast, high renewable) — a clean, physically coherent
+    gradient, not a step change. A sharper, more complete version of Week 6's `is_high_wind`
+    finding (bias -796 MW using wind alone): combining wind+solar and looking at the whole
+    spectrum shows the degradation spans the *entire* distribution, not just the top decile.
+  - **PICP behaves differently — flat until the very top decile, then a cliff.** Deciles 1-9 sit
+    in a noisy but roughly stable 0.60-0.72 band; decile 10 alone drops to **0.52**. Calibration
+    failure is a concentrated tail phenomenon (the most extreme ~10% of renewable-output
+    half-hours), not a trend across above-average renewable output the way point accuracy is —
+    an important distinction: the accuracy cost of high renewable output is gradual and roughly
+    predictable, but the calibration cost is a genuine cliff at the extreme tail specifically.
+  - **Synthesis, no new fix attempted**: both findings trace back to the same root cause already
+    identified in Weeks 4/4b/6-follow-up (embedded generation suppresses demand by physics before
+    measurement; weather features only partially proxy for it; a dedicated wind/solar forecast
+    doesn't close the gap either). This notebook's job was characterizing *where and how* the
+    problem shows up, not re-solving it — the calibration piece still needs a structurally
+    different fix (the conformal-prediction / distributional-model stretch goal), consistent with
+    the Week 6 follow-up's conclusion.
+- **Stretch, not pursued:** a literal GB duck-curve/net-demand analysis needs *transmission-scale*
+  wind/solar generation (Elexon BMRS fuel-mix data) — out of scope for the core 8-week plan.
+- **Deliverable (done):** per-embedded-renewable-decile error table + plots (MAE/bias/PICP vs.
+  decile) + the accuracy-vs-calibration shape distinction above.
 
 ## Week 8 — Publish + Impact Estimate
 
