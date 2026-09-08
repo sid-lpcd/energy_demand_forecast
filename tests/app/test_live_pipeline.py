@@ -157,3 +157,47 @@ def test_live_inputs_cache_only_refetches_when_settlement_period_changes():
         live_pipeline_module.fetch_live_inputs = original
 
     assert len(calls) == 2
+
+
+def test_live_inputs_cache_serves_stale_inputs_when_refetch_fails():
+    good_inputs = _live_inputs(issue_time=pd.Timestamp("2026-06-15T10:00:00Z"))
+    calls = {"n": 0}
+
+    def flaky_fetch(now_utc):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return good_inputs
+        raise RuntimeError("upstream rate limited")
+
+    cache = LiveInputsCache()
+    import app.live_pipeline as live_pipeline_module
+
+    original = live_pipeline_module.fetch_live_inputs
+    live_pipeline_module.fetch_live_inputs = flaky_fetch
+    try:
+        t0 = pd.Timestamp("2026-06-15T10:05:00Z")
+        t1 = pd.Timestamp("2026-06-15T10:35:00Z")  # next settlement period -> refetch attempted
+
+        first = cache.get(t0)
+        second = cache.get(t1)
+    finally:
+        live_pipeline_module.fetch_live_inputs = original
+
+    assert calls["n"] == 2
+    assert second is first is good_inputs
+
+
+def test_live_inputs_cache_raises_when_first_fetch_fails_with_no_stale_fallback():
+    def always_fails(now_utc):
+        raise RuntimeError("upstream rate limited")
+
+    cache = LiveInputsCache()
+    import app.live_pipeline as live_pipeline_module
+
+    original = live_pipeline_module.fetch_live_inputs
+    live_pipeline_module.fetch_live_inputs = always_fails
+    try:
+        with pytest.raises(RuntimeError, match="upstream rate limited"):
+            cache.get(pd.Timestamp("2026-06-15T10:05:00Z"))
+    finally:
+        live_pipeline_module.fetch_live_inputs = original

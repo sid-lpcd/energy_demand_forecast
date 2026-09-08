@@ -56,6 +56,7 @@ Documented as a stated simplification (see PLAN.md).
 from __future__ import annotations
 
 import argparse
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple
@@ -272,6 +273,60 @@ def fetch_open_meteo_live_forecast(lat: float, lon: float, start: str, end: str)
     )
 
 
+def _get_with_retry(url: str, params: dict, *, timeout: int = 60, max_retries: int = 3) -> requests.Response:
+    """GET with exponential backoff on 429 -- Open-Meteo's free tier rate-limits by client IP,
+    and Render's outbound traffic shares an IP pool with other Render-hosted apps, so a 429 there
+    can be transient and unrelated to this app's own request volume."""
+    resp = None
+    for attempt in range(max_retries):
+        resp = requests.get(url, params=params, timeout=timeout)
+        if resp.status_code != 429:
+            resp.raise_for_status()
+            return resp
+        time.sleep(2**attempt)
+    resp.raise_for_status()
+    return resp
+
+
+def fetch_open_meteo_live_forecast_multi(
+    cities: Sequence[City], start: str, end: str
+) -> dict[str, pd.DataFrame]:
+    """Same data as `fetch_open_meteo_live_forecast`, for all `cities` in a single HTTP request --
+    Open-Meteo's Forecast API accepts comma-separated `latitude`/`longitude` lists and returns one
+    `hourly` block per location. Cuts the live-inference app's per-refetch request count from one
+    per city to one total, which is what tripped Open-Meteo's free-tier rate limit in production
+    (see `app.live_pipeline`)."""
+    resp = _get_with_retry(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude": ",".join(str(c.lat) for c in cities),
+            "longitude": ",".join(str(c.lon) for c in cities),
+            "start_date": start,
+            "end_date": end,
+            "hourly": "temperature_2m,apparent_temperature,wind_speed_10m,cloud_cover,shortwave_radiation",
+            "wind_speed_unit": "ms",
+            "models": PINNED_MODEL,
+            "timezone": "UTC",
+        },
+    )
+    payload = resp.json()
+    entries = payload if isinstance(payload, list) else [payload]
+    per_city = {}
+    for city, entry in zip(cities, entries):
+        h = entry["hourly"]
+        per_city[city.name] = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(h["time"], utc=True),
+                "temperature_c": h["temperature_2m"],
+                "apparent_temperature_c": h["apparent_temperature"],
+                "wind_speed_ms": h["wind_speed_10m"],
+                "cloud_cover_pct": h["cloud_cover"],
+                "shortwave_radiation_wm2": h["shortwave_radiation"],
+            }
+        ).set_index("timestamp")
+    return per_city
+
+
 _FETCHERS = {
     "open_meteo_historical": fetch_open_meteo_historical,
     "nasa_power": fetch_nasa_power,
@@ -286,22 +341,33 @@ _MIN_START = {
 }
 
 
+def _population_weight_per_city(
+    per_city: dict[str, pd.DataFrame], cities: Sequence[City]
+) -> pd.DataFrame:
+    weights = _population_weights()
+    value_cols = per_city[cities[0].name].columns
+    combined = pd.DataFrame(index=per_city[cities[0].name].index)
+    for col in value_cols:
+        combined[col] = sum(per_city[c.name][col] * weights[c.name] for c in cities)
+    return combined.reset_index()
+
+
 def population_weighted_gb_series(
     fetch: callable, start: str, end: str, cities: Sequence[City] = GB_CITIES
 ) -> pd.DataFrame:
     """Fetch one source for every reference city and population-weight them into one GB series."""
-    weights = _population_weights()
-    per_city = {}
-    for city in cities:
-        df = fetch(city.lat, city.lon, start, end).set_index("timestamp")
-        per_city[city.name] = df
+    per_city = {city.name: fetch(city.lat, city.lon, start, end).set_index("timestamp") for city in cities}
+    return _population_weight_per_city(per_city, cities)
 
-    value_cols = per_city[cities[0].name].columns
-    combined = pd.DataFrame(index=per_city[cities[0].name].index)
-    for col in value_cols:
-        weighted = sum(per_city[c.name][col] * weights[c.name] for c in cities)
-        combined[col] = weighted
-    return combined.reset_index()
+
+def population_weighted_live_forecast(
+    start: str, end: str, cities: Sequence[City] = GB_CITIES
+) -> pd.DataFrame:
+    """Batched equivalent of `population_weighted_gb_series(fetch_open_meteo_live_forecast, ...)` --
+    one HTTP request for all `cities` instead of one per city (see `fetch_open_meteo_live_forecast_multi`).
+    Used by the live-inference app instead of the generic per-city path."""
+    per_city = fetch_open_meteo_live_forecast_multi(cities, start, end)
+    return _population_weight_per_city(per_city, cities)
 
 
 def build_source_parquet(source: str, start: str, end: str, out_dir: Path) -> Path:

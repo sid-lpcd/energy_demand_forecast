@@ -15,6 +15,7 @@ per request (cheap; the cost here is the upstream network calls, not `.predict()
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -22,11 +23,13 @@ import pandas as pd
 from edf.data.calendar_events import build_calendar_features
 from edf.data.live_demand import fetch_live_demand_actuals
 from edf.data.live_ndf import fetch_live_ndf
-from edf.data.weather import fetch_open_meteo_live_forecast, population_weighted_gb_series
+from edf.data.weather import population_weighted_live_forecast
 from edf.features.buckets import is_christmas_period
 from edf.features.demand import build_feature_table
 from edf.features.weather import build_weather_feature_table_from_frame, cumulative_degree
 from edf.models.registry import CUMULATIVE_DEGREE_WINDOW_PERIODS
+
+logger = logging.getLogger(__name__)
 
 LOOKBACK_DAYS = 30  # >= trailing_weekly_moving_average's 28-day need, plus margin
 WEATHER_FORECAST_DAYS_AHEAD = 9  # comfortably covers the 7d horizon's target
@@ -50,14 +53,20 @@ def fetch_live_inputs(now_utc: pd.Timestamp) -> LiveInputs:
     demand = fetch_live_demand_actuals()
     start = now_utc.strftime("%Y-%m-%d")
     end = (now_utc + pd.Timedelta(days=WEATHER_FORECAST_DAYS_AHEAD)).strftime("%Y-%m-%d")
-    weather = population_weighted_gb_series(fetch_open_meteo_live_forecast, start, end)
+    weather = population_weighted_live_forecast(start, end)
     ndf = fetch_live_ndf()
     return LiveInputs(demand_history=demand, weather_forecast=weather, ndf=ndf, fetched_at=now_utc)
 
 
 @dataclass
 class LiveInputsCache:
-    """Refetches `fetch_live_inputs` only when the settlement-period key changes."""
+    """Refetches `fetch_live_inputs` only when the settlement-period key changes.
+
+    If a refetch fails (e.g. a live-forecast rate limit) and a previous fetch already
+    succeeded, serves that stale cache rather than failing the request outright -- slightly
+    stale live inputs are a better response than a 500. Only propagates the exception when
+    there's no prior cache to fall back on.
+    """
 
     _key: pd.Timestamp | None = field(default=None, init=False)
     _inputs: LiveInputs | None = field(default=None, init=False)
@@ -65,8 +74,18 @@ class LiveInputsCache:
     def get(self, now_utc: pd.Timestamp) -> LiveInputs:
         key = settlement_floor(now_utc)
         if key != self._key or self._inputs is None:
-            self._inputs = fetch_live_inputs(now_utc)
-            self._key = key
+            try:
+                self._inputs = fetch_live_inputs(now_utc)
+                self._key = key
+            except Exception:
+                if self._inputs is None:
+                    raise
+                logger.warning(
+                    "fetch_live_inputs failed for %s; serving stale inputs fetched at %s",
+                    now_utc,
+                    self._inputs.fetched_at,
+                    exc_info=True,
+                )
         return self._inputs
 
 

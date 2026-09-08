@@ -1,16 +1,21 @@
 import pandas as pd
 import pytest
+import requests
 
+import edf.data.weather as weather_module
 from edf.data.weather import (
     _FETCHERS,
     DAY_AHEAD_ARCHIVE_START,
     GB_CITIES,
     NOWCAST_ARCHIVE_START,
+    PINNED_MODEL,
     _population_weights,
     fetch_open_meteo_day_ahead,
     fetch_open_meteo_live_forecast,
+    fetch_open_meteo_live_forecast_multi,
     fetch_open_meteo_nowcast_archive,
     population_weighted_gb_series,
+    population_weighted_live_forecast,
 )
 
 
@@ -41,6 +46,101 @@ def test_archive_start_constants_not_moved_accidentally():
 
 def test_live_forecast_is_registered_and_has_the_shared_column_contract():
     assert _FETCHERS["open_meteo_live_forecast"] is fetch_open_meteo_live_forecast
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, json_body=None):
+        self.status_code = status_code
+        self._json_body = json_body
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"{self.status_code} error")
+
+    def json(self):
+        return self._json_body
+
+
+def _live_forecast_payload(temperature_by_city: dict[str, float]) -> list[dict]:
+    index = pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC")
+    return [
+        {
+            "hourly": {
+                "time": [t.isoformat() for t in index],
+                "temperature_2m": [temperature_by_city[city.name]] * len(index),
+                "apparent_temperature": [temperature_by_city[city.name]] * len(index),
+                "wind_speed_10m": [1.0] * len(index),
+                "cloud_cover": [0.0] * len(index),
+                "shortwave_radiation": [0.0] * len(index),
+            }
+        }
+        for city in GB_CITIES
+    ]
+
+
+def test_live_forecast_multi_issues_one_request_for_all_cities(monkeypatch):
+    calls = []
+    temps = {city.name: city.population_millions for city in GB_CITIES}
+
+    def fake_get(url, params, timeout):
+        calls.append((url, params))
+        return _FakeResponse(200, _live_forecast_payload(temps))
+
+    monkeypatch.setattr(weather_module.requests, "get", fake_get)
+
+    per_city = fetch_open_meteo_live_forecast_multi(GB_CITIES, "2026-01-01", "2026-01-02")
+
+    assert len(calls) == 1
+    params = calls[0][1]
+    assert params["latitude"] == ",".join(str(c.lat) for c in GB_CITIES)
+    assert params["longitude"] == ",".join(str(c.lon) for c in GB_CITIES)
+    assert params["models"] == PINNED_MODEL
+    assert set(per_city) == {c.name for c in GB_CITIES}
+    for city in GB_CITIES:
+        assert per_city[city.name]["temperature_c"].eq(temps[city.name]).all()
+
+
+def test_live_forecast_multi_retries_on_429_then_succeeds(monkeypatch):
+    responses = [_FakeResponse(429), _FakeResponse(429), _FakeResponse(200, _live_forecast_payload(
+        {city.name: 1.0 for city in GB_CITIES}
+    ))]
+
+    def fake_get(url, params, timeout):
+        return responses.pop(0)
+
+    monkeypatch.setattr(weather_module.requests, "get", fake_get)
+    monkeypatch.setattr(weather_module.time, "sleep", lambda seconds: None)
+
+    per_city = fetch_open_meteo_live_forecast_multi(GB_CITIES, "2026-01-01", "2026-01-02")
+
+    assert not responses
+    assert set(per_city) == {c.name for c in GB_CITIES}
+
+
+def test_live_forecast_multi_raises_after_exhausting_retries(monkeypatch):
+    def fake_get(url, params, timeout):
+        return _FakeResponse(429)
+
+    monkeypatch.setattr(weather_module.requests, "get", fake_get)
+    monkeypatch.setattr(weather_module.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(requests.HTTPError):
+        fetch_open_meteo_live_forecast_multi(GB_CITIES, "2026-01-01", "2026-01-02")
+
+
+def test_population_weighted_live_forecast_matches_manual_weighted_average(monkeypatch):
+    temps = {city.name: city.population_millions for city in GB_CITIES}
+
+    def fake_get(url, params, timeout):
+        return _FakeResponse(200, _live_forecast_payload(temps))
+
+    monkeypatch.setattr(weather_module.requests, "get", fake_get)
+
+    combined = population_weighted_live_forecast("2026-01-01", "2026-01-02")
+
+    weights = _population_weights()
+    expected = sum(c.population_millions * weights[c.name] for c in GB_CITIES)
+    assert combined["temperature_c"].round(6).eq(round(expected, 6)).all()
 
 
 def test_population_weighted_series_matches_manual_weighted_average():
