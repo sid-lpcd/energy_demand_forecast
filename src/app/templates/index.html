@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}GB Demand Forecast — Intro{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Probabilistic Short-Term GB Electricity Demand Forecasting</h1>
+  <p class="lede">
+    A from-scratch machine learning model that forecasts Great Britain's national electricity
+    demand 30 minutes, 1 hour, 1 day, and 7 days ahead — with calibrated P10/P50/P90 uncertainty
+    bands, not just a single number.
+  </p>
+  <div class="cta-row">
+    <a class="button primary" href="/predictions">See live predictions</a>
+    <a class="button" href="/report">Read the technical report</a>
+  </div>
+</section>
+
+<section class="cards">
+  <article class="card">
+    <h2>Live, not backtested</h2>
+    <p>Every prediction on this site is computed on demand, from data fetched right now: NESO's
+       rolling demand feed, a live Open-Meteo weather forecast, and NESO's current day-ahead
+       forecast — the same pipeline shape as the model's own training data, not a canned demo.</p>
+  </article>
+  <article class="card">
+    <h2>Probabilistic, not just a point forecast</h2>
+    <p>Alongside a single best-guess number, each horizon reports a P10–P90 range: a forecaster's
+       honest statement of "here's a band I'm 80% confident contains the real value," not false
+       precision.</p>
+  </article>
+  <article class="card">
+    <h2>Honestly scoped</h2>
+    <p>The longer the horizon, the more the forecast leans on a live weather <em>forecast</em>
+       rather than certainty — and the 1-day tile is shown alongside NESO's own published
+       forecast, not in place of it. See the report for the full limitations.</p>
+  </article>
+</section>
+{% endblock %}

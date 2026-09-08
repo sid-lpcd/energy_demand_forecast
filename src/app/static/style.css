@@ -1,0 +1,217 @@
+:root {
+  --bg: #ffffff;
+  --surface: #f6f7f9;
+  --border: #e2e5ea;
+  --text: #1a1d23;
+  --text-muted: #5b6270;
+  --accent: #2f6fed;
+  --accent-track: #dde6fb;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --surface: #1c1f26;
+    --border: #2c303a;
+    --text: #eceef2;
+    --text-muted: #9aa1af;
+    --accent: #6d97f7;
+    --accent-track: #2a3550;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.site-header .brand {
+  font-weight: 700;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.site-header nav a {
+  margin-left: 1.25rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.site-header nav a:hover { color: var(--text); }
+
+.site-footer {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.hero h1 { font-size: 1.9rem; margin-bottom: 0.5rem; }
+.hero .lede { color: var(--text-muted); max-width: 60ch; }
+
+.cta-row { margin: 1.5rem 0; display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+.button {
+  display: inline-block;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.95rem;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.card h2 { font-size: 1.05rem; margin-top: 0; }
+.card p { color: var(--text-muted); font-size: 0.9rem; }
+
+.predictions-header { margin-bottom: 1.5rem; }
+.status-line { color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1rem; }
+
+.horizon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.horizon-card .horizon-name { margin: 0 0 0.25rem; font-size: 1.1rem; }
+.horizon-card .target-time { color: var(--text-muted); font-size: 0.8rem; margin: 0 0 0.75rem; }
+
+.point-value { margin: 0 0 1rem; }
+.point-number { font-size: 1.8rem; font-weight: 700; }
+.unit { color: var(--text-muted); font-size: 0.9rem; }
+
+.interval-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--accent-track);
+  margin-bottom: 0.4rem;
+}
+
+.interval-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  opacity: 0.35;
+}
+
+.interval-marker {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+.interval-labels {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.interval-labels div:first-child { text-align: left; }
+.interval-labels div:nth-child(2) { text-align: center; }
+.interval-labels div:last-child { text-align: right; }
+
+.interval-labels dt {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.interval-labels dd {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.ndf-panel {
+  margin-top: 2.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.ndf-panel h2 { margin-top: 0; font-size: 1.1rem; }
+
+.ndf-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem 1.5rem;
+  margin: 1rem 0;
+}
+
+.ndf-stats dt { color: var(--text-muted); font-size: 0.8rem; }
+.ndf-stats dd { margin: 0; font-size: 1.15rem; font-weight: 600; }
+
+.fine-print { color: var(--text-muted); font-size: 0.8rem; }
+
+.report .report-toc { margin-bottom: 1.5rem; }
+.report .report-toc a { margin-right: 1rem; }
+
+.markdown-body { max-width: 75ch; }
+.markdown-body table { border-collapse: collapse; width: 100%; overflow-x: auto; display: block; }
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+}
+.markdown-body code {
+  background: var(--surface);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+}

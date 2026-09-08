@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Report — GB Demand Forecast{% endblock %}
+{% block content %}
+<section class="report">
+  <h1>Technical Report &amp; Findings</h1>
+  <nav class="report-toc">
+    <a href="#technical-report">Technical report</a>
+    <a href="#findings">Week-by-week findings</a>
+  </nav>
+  <section id="technical-report" class="markdown-body">
+    {{ technical_report | safe }}
+  </section>
+  <hr>
+  <section id="findings" class="markdown-body">
+    {{ findings | safe }}
+  </section>
+</section>
+{% endblock %}

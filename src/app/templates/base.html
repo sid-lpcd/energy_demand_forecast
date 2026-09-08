@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}GB Demand Forecast{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">GB Demand Forecast</a>
+    <nav>
+      <a href="/">Intro</a>
+      <a href="/predictions">Live Predictions</a>
+      <a href="/report">Report</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <p>A personal research project — probabilistic short-term GB electricity demand forecasting.
+       Not affiliated with NESO/Elexon. See the <a href="/report">report</a> for methodology and limitations.</p>
+  </footer>
+</body>
+</html>

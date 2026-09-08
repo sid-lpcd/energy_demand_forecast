@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Live Predictions — GB Demand Forecast{% endblock %}
+{% block content %}
+<section class="predictions-header">
+  <h1>Live Predictions</h1>
+  <p id="status-line" class="status-line" aria-live="polite">Loading live data…</p>
+  <button id="refresh-button" class="button" type="button">Refresh</button>
+</section>
+
+<section id="horizon-grid" class="horizon-grid" aria-live="polite"></section>
+
+<section id="ndf-panel" class="ndf-panel" hidden>
+  <h2>How does this compare to NESO's own forecast?</h2>
+  <p>
+    This project's headline result: blending our model with NESO's day-ahead forecast (NDF) beats
+    NDF alone by ~3.55% on out-of-sample testing (weight ≈0.17 on our model). That combination
+    only exists at NDF's own published cardinal-point times, so it's shown here separately rather
+    than folded into the 1-day tile above.
+  </p>
+  <dl class="ndf-stats">
+    <div><dt>NDF cardinal point</dt><dd id="ndf-time">–</dd></div>
+    <div><dt>NDF forecast</dt><dd id="ndf-forecast">–</dd></div>
+    <div><dt>Our forecast</dt><dd id="ndf-ours">–</dd></div>
+    <div><dt>Combined (weight 0.17)</dt><dd id="ndf-combined">–</dd></div>
+  </dl>
+  <p class="fine-print" id="ndf-note"></p>
+</section>
+
+<template id="horizon-card-template">
+  <article class="card horizon-card">
+    <h2 class="horizon-name"></h2>
+    <p class="target-time"></p>
+    <p class="point-value"><span class="point-number"></span> <span class="unit">MW</span></p>
+    <div class="interval-bar" role="img">
+      <div class="interval-fill"></div>
+      <div class="interval-marker p50-marker"></div>
+    </div>
+    <dl class="interval-labels">
+      <div><dt>P10</dt><dd class="p10-label"></dd></div>
+      <div><dt>P50</dt><dd class="p50-label"></dd></div>
+      <div><dt>P90</dt><dd class="p90-label"></dd></div>
+    </dl>
+  </article>
+</template>
+
+<script src="/static/predictions.js"></script>
+{% endblock %}
