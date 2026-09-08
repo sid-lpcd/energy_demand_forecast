@@ -1,6 +1,6 @@
 import pandas as pd
 
-from edf.quantile import enforce_monotonic_quantiles, quantile_crossing_rate
+from edf.models.quantile import enforce_monotonic_quantiles, quantile_crossing_rate
 
 
 def test_quantile_crossing_rate_zero_when_already_monotonic():

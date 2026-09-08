@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from edf.baselines import PERIODS_PER_WEEK
-from edf.features import build_feature_table
-from edf.forecast import recursive_forecast, train_lightgbm
+from edf.features.demand import build_feature_table
+from edf.models.baselines import PERIODS_PER_WEEK
+from edf.models.forecast import recursive_forecast, train_lightgbm
 
 
 def _canonical_df(n: int) -> pd.DataFrame:

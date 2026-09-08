@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from edf.buckets import (
+from edf.features.buckets import (
     build_day_type_buckets,
     is_christmas_period,
     is_weekend,

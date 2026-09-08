@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from edf.tuning import tune_lightgbm, walk_forward_cv_folds
+from edf.models.tuning import tune_lightgbm, walk_forward_cv_folds
 
 
 def test_walk_forward_cv_folds_are_expanding_windows():

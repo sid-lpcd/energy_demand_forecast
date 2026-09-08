@@ -61,7 +61,7 @@ def load_weather_series(
 
     Points in `index` outside the source's own time range come back NaN
     (interpolation doesn't extrapolate) -- callers drop those via
-    `edf.features.build_feature_table`'s NaN-row handling, same as any other
+    `edf.features.demand.build_feature_table`'s NaN-row handling, same as any other
     feature's warm-up period.
     """
     hourly = pd.read_parquet(raw_dir / f"{source}.parquet").set_index("timestamp").sort_index()

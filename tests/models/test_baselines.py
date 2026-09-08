@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from edf.baselines import (
+from edf.models.baselines import (
     PERIODS_PER_DAY,
     PERIODS_PER_WEEK,
     naive,

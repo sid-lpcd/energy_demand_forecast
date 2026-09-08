@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from edf.combination import combine_forecasts, fit_combination_weight
+from edf.models.combination import combine_forecasts, fit_combination_weight
 
 
 def test_combine_forecasts_weighted_average():

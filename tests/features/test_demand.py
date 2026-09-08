@@ -1,8 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from edf.baselines import PERIODS_PER_DAY, PERIODS_PER_WEEK
-from edf.features import (
+from edf.features.demand import (
     CALENDAR_COLUMNS,
     build_feature_table,
     deterministic_features,
@@ -11,6 +10,7 @@ from edf.features import (
     rolling_features,
     time_features,
 )
+from edf.models.baselines import PERIODS_PER_DAY, PERIODS_PER_WEEK
 
 
 def _canonical_df(n: int) -> pd.DataFrame:

@@ -2,7 +2,7 @@
 
 Wind/solar generation is a strongly weather-driven, *not* demand-driven
 process — a real forecaster predicts it from a weather forecast, not from
-its own recent lag history the way `edf.features` builds demand features.
+its own recent lag history the way `edf.features.demand` builds demand features.
 So this module deliberately doesn't offer lag/rolling features at all: per
 PLAN.md, `capacity_factor ~ f(weather forecast, calendar)` only.
 
@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from edf.data.weather import GB_CITIES
-from edf.features import time_features
+from edf.features.demand import time_features
 
 # Population-weighted GB centroid — the same weighting `edf.data.weather` uses
 # to aggregate weather across cities, reused here for a single representative
@@ -68,7 +68,7 @@ def build_wind_feature_table(
 ) -> tuple[pd.DataFrame, pd.Series]:
     """(X, y) for the wind capacity-factor model: y = wind capacity factor.
 
-    `weather` (`edf.weather_features.build_weather_feature_table`) must have
+    `weather` (`edf.features.weather.build_weather_feature_table`) must have
     a `wind_speed_ms` column, aligned to `df`'s index. Only `wind_speed_ms`
     is used — cloud cover/radiation/temperature aren't physically relevant
     to wind generation, so including them would just be noise for a

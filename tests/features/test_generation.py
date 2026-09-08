@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from edf.generation_features import (
+from edf.features.generation import (
     build_solar_feature_table,
     build_wind_feature_table,
     capacity_factor,

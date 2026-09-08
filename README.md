@@ -32,7 +32,13 @@ Elexon BMRS, Open-Meteo, NASA POWER, Carbon Intensity API) via the modules in `s
 ## Repo structure
 
 ```
-src/edf/          reusable, tested code: data loading/cleaning, features, models, evaluation
+src/edf/          reusable, tested code
+  data/             loading, cleaning, source-specific fetchers (NESO, Elexon, Open-Meteo, ...)
+  features/         feature engineering (demand lags/calendar, weather, generation, buckets)
+  models/           baselines, LightGBM models, tuning, quantile, forecast combination
+  config.py         fixed train/validation/test split and other project-wide constants
+  evaluate.py        walk-forward evaluation harness and metrics
+  tracking.py         MLflow experiment-tracking helpers
 tests/            unit tests, mirrors src/edf/ (134 tests)
 notebooks/        numbered, sequential analysis — each one a single question, run end to end
 reports/          the technical report and a running findings log

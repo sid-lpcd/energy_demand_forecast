@@ -9,11 +9,11 @@ respect to forecast horizon:
   *target* timestamp — a bank holiday in a month's time is just as knowable
   today as it is tomorrow. They're valid inputs at every horizon.
 - **Lag/rolling features** (`lag_features`, `rolling_features`) are built
-  from `demand` itself, so — exactly as with `edf.baselines.valid_baselines`
+  from `demand` itself, so — exactly as with `edf.models.baselines.valid_baselines`
   — a given lag is only a legitimate input at a horizon shorter than or
   equal to its own lag; otherwise it would use data a forecaster wouldn't
   actually have at issue time yet. `rolling_features` reuses
-  `edf.baselines.trailing_moving_average`/`trailing_weekly_moving_average`
+  `edf.models.baselines.trailing_moving_average`/`trailing_weekly_moving_average`
   directly, so the seasonal-naive baselines double as model features here.
 
 `wind`/`solar`/`interconnector` are deliberately never used as features —
@@ -27,7 +27,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from edf.baselines import (
+from edf.models.baselines import (
     PERIODS_PER_DAY,
     PERIODS_PER_WEEK,
     trailing_moving_average,
@@ -99,7 +99,7 @@ def lag_features(
     """Lag columns valid at `horizon_periods` — i.e. lag >= horizon_periods.
 
     A shorter lag would need data that doesn't exist yet at issue time (see
-    module docstring / `edf.baselines.valid_baselines`).
+    module docstring / `edf.models.baselines.valid_baselines`).
     """
     columns = {f"lag_{lag}": demand.shift(lag) for lag in lags if lag >= horizon_periods}
     return pd.DataFrame(columns, index=demand.index)
@@ -122,7 +122,7 @@ def rolling_features(demand: pd.Series, horizon_periods: int) -> pd.DataFrame:
 def deterministic_features(df: pd.DataFrame) -> pd.DataFrame:
     """Time + calendar features: valid at every horizon, indexed like `df`.
 
-    Split out from `build_feature_table` so `edf.forecast.recursive_forecast`
+    Split out from `build_feature_table` so `edf.models.forecast.recursive_forecast`
     can precompute this once for the whole table and slice it by position at
     each recursion step, rather than only ever getting it pre-filtered to one
     horizon's non-NaN rows.
@@ -141,7 +141,7 @@ def build_feature_table(
 
     `df` is the canonical table (`edf.data.clean.build_canonical_table`).
     `weather`, if given, is an already-built weather feature table
-    (`edf.weather_features.build_weather_feature_table`) indexed like `df` —
+    (`edf.features.weather.build_weather_feature_table`) indexed like `df` —
     deliberately left as a plain optional join here rather than this module
     picking a source itself, since *which* weather source is valid (ERA5
     hindsight vs. a genuine day-ahead forecast, and over what date range) is

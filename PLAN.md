@@ -200,9 +200,9 @@ line.
   it.
 - **Horizon scenario analysis (done), `notebooks/05_baseline_horizons.ipynb`:** the finding above
   was resolved by making forecast horizon an explicit, fixed parameter — `edf.config.HORIZONS`
-  (`30min`/`1h`/`1d`/`7d`, in half-hourly periods: 1/2/48/336). `edf.baselines.persistence`
+  (`30min`/`1h`/`1d`/`7d`, in half-hourly periods: 1/2/48/336). `edf.models.baselines.persistence`
   generalizes `naive` to any horizon (`demand.shift(horizon_periods)`), and
-  `edf.baselines.valid_baselines(horizon_periods)` excludes any fixed-lag baseline shorter than
+  `edf.models.baselines.valid_baselines(horizon_periods)` excludes any fixed-lag baseline shorter than
   the horizon (e.g. `previous_day_same_time`, lag 48, is invalid at the `7d` horizon — that data
   wouldn't exist yet at a real week-ahead issue time), adding `trailing_weekly_moving_average` as
   the `7d`-horizon analogue of `trailing_moving_average`. Result confirms the finding was purely a
@@ -226,7 +226,7 @@ line.
   the *target* timestamp, valid at every horizon. `lag_features`/`rolling_features` — lag_1/lag_2/
   lag_48/lag_336 and the Week 2 `trailing_moving_average`/`trailing_weekly_moving_average`
   baselines reused directly as model inputs — filtered by horizon exactly like
-  `edf.baselines.valid_baselines` (a lag shorter than the horizon would use data not yet known at
+  `edf.models.baselines.valid_baselines` (a lag shorter than the horizon would use data not yet known at
   issue time). `wind`/`solar`/`interconnector` are deliberately excluded per PLAN.md's leakage
   warning (Week 4b fixes this properly). Tested in `tests/test_features.py`.
 - **Two strategies for covering all four horizons (done), `src/edf/forecast.py`:**
@@ -433,7 +433,7 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
     likely understates wind speed at actual (rural/coastal) wind-farm sites relative to city
     centres, especially during high-wind events. Noted as a real limitation, not fixed now.
 - **Solar capacity-factor model (done), `notebooks/10_solar_capacity_factor.ipynb`:**
-  `edf.generation_features.solar_elevation_deg` computes solar elevation directly from
+  `edf.features.generation.solar_elevation_deg` computes solar elevation directly from
   timestamp + a population-weighted GB centroid (standard declination/hour-angle formula, no new
   dependency, no API call) — a deterministic ceiling feature, verified against the textbook
   solstice-noon check (90 − lat ± 23.45°) and against midnight being exactly 0. Combined with
@@ -497,7 +497,7 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
 - **Done, `notebooks/12_probabilistic_forecasting.ipynb`:** LightGBM `quantile` objective at
   `1d` horizon, same feature set as Week 4's weather-on(ERA5) model. Hyperparameters tuned once
   via walk-forward CV at α = 0.5 (pinball loss at 0.5 is exactly `0.5 × MAE`, so the existing
-  MAE-based `edf.tuning` harness is *already* correct pinball-loss tuning at that alpha, no code
+  MAE-based `edf.models.tuning` harness is *already* correct pinball-loss tuning at that alpha, no code
   changes needed) and reused across every other alpha — a stated simplification, not tuning each
   quantile separately.
 - **Quantile crossing (done), `src/edf/quantile.py`:** 4.7% of `VALIDATION` rows have P10 > P50
@@ -573,7 +573,7 @@ would be built (chained/cascaded forecasts), not a project-specific workaround.
   commentary + the COVID case study with plots, ready for Week 8.
 - **Follow-up: can the extreme-bucket bias be fixed? (done), `notebooks/14_extreme_bucket_bias_fix.ipynb`:**
   two targeted interventions — an `is_christmas` feature (Dec 24-Jan 1, broader than the
-  existing bank-holiday flags) and 3x sample-weighting (`edf.forecast.train_lightgbm` gained a
+  existing bank-holiday flags) and 3x sample-weighting (`edf.models.forecast.train_lightgbm` gained a
   `sample_weight` param) on `is_hot`/`is_high_wind`/`is_christmas` training rows — compared via
   4 point-model variants (baseline/+feature/+weighting/+both).
   - **Each lever fixes its own bucket, and they don't stack additively.** The `is_christmas`
@@ -621,7 +621,7 @@ again double-counts the same effect and produces a number without a clean physic
 **not** the GB analogue of the CAISO "duck curve" net-load concept.
 
 - **Done, `notebooks/15_renewable_net_demand.ipynb`:** bucketed `VALIDATION` by combined embedded
-  `wind + solar` output into deciles (`edf.buckets.percentile_bin_buckets`, new — Week 6's flags
+  `wind + solar` output into deciles (`edf.features.buckets.percentile_bin_buckets`, new — Week 6's flags
   only captured the top/bottom 10%; this Week 7 question needed the *whole* range to check for a
   trend, not just the extremes), evaluated with the same harness as Week 6
   (`evaluate_by_bucket`/`evaluate_quantiles_by_bucket`). Models used are the Week 6 follow-up's
@@ -798,7 +798,7 @@ point-model recipe and already-tuned hyperparameters as `notebooks/19`.
   is available on all three relevant endpoints (ERA5 archive, nowcast archive, day-ahead Previous
   Runs) with no tightening of the existing `DAY_AHEAD_ARCHIVE_START` guard (its own cutover,
   2024-03-01, is earlier than the binding `shortwave_radiation_previous_day1` cutover). Added to
-  `edf.data.weather`'s three relevant fetchers and `edf.weather_features.cumulative_degree` (new,
+  `edf.data.weather`'s three relevant fetchers and `edf.features.weather.cumulative_degree` (new,
   tested, generic trailing rolling-sum helper).
 - **Apparent temperature: null, marginally negative.** Swapping it into `heating_degree`/
   `cooling_degree` (replacing `temperature_c`) made MAE 0.50% worse and bias slightly worse; the

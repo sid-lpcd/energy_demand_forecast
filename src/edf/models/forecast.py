@@ -4,10 +4,10 @@ Two strategies for covering multiple forecast horizons (`edf.config.HORIZONS`)
 from LightGBM models, per PLAN.md Week 3:
 
 - **Direct**: train a separate model per horizon, each using only the
-  lag/rolling features valid at that horizon (`edf.features.build_feature_table`).
+  lag/rolling features valid at that horizon (`edf.features.demand.build_feature_table`).
   No error compounding, but one model per horizon.
 - **Recursive**: train a single model at the shortest horizon (30 minutes,
-  where every lag/rolling feature in `edf.features` is valid), then roll it
+  where every lag/rolling feature in `edf.features.demand` is valid), then roll it
   forward step by step to reach longer horizons, feeding each step's own
   prediction back in as the next step's short lags. One model, but errors
   can compound over many steps, and features that were real at issue time
@@ -28,8 +28,8 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from edf.baselines import PERIODS_PER_DAY, PERIODS_PER_WEEK
-from edf.features import LAG_CANDIDATES, deterministic_features
+from edf.features.demand import LAG_CANDIDATES, deterministic_features
+from edf.models.baselines import PERIODS_PER_DAY, PERIODS_PER_WEEK
 
 DEFAULT_LGBM_PARAMS: dict[str, object] = {
     "n_estimators": 300,
@@ -79,7 +79,7 @@ def recursive_forecast(
     """Roll a horizon=1 `model` forward `horizon_periods` steps per issue time.
 
     At step k (1..horizon_periods), every feature is rebuilt for the target
-    time `issue_time + k` exactly as `edf.features.build_feature_table` would
+    time `issue_time + k` exactly as `edf.features.demand.build_feature_table` would
     at horizon=1 — except each lag/rolling input that reaches past the issue
     time is taken from this simulation's own prior predictions instead of
     real `demand`, since a genuine forecaster wouldn't have that value yet.

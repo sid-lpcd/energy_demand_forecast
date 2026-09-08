@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from edf.weather_features import (
+from edf.features.weather import (
     build_weather_feature_table,
     cooling_degree,
     cumulative_degree,
