@@ -234,11 +234,50 @@ def fetch_open_meteo_day_ahead(lat: float, lon: float, start: str, end: str) -> 
     )
 
 
+def fetch_open_meteo_live_forecast(lat: float, lon: float, start: str, end: str) -> pd.DataFrame:
+    """The live Forecast API -- a genuine forward-looking forecast (up to 16 days ahead),
+    for the live-inference app (`src/app`), not for building any historical archive.
+
+    Unlike sources #1-4 above, this one is never re-fetchable for a past date -- it always
+    returns whatever forecast is live *right now*, so `start`/`end` should cover today onward
+    (Open-Meteo returns the nearest available days if the range exceeds its forecast horizon).
+    Pinned to `PINNED_MODEL`, same discipline as the other two Open-Meteo fetchers, so it stays
+    directly comparable to `fetch_open_meteo_day_ahead`'s training-time values.
+    """
+    resp = requests.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": start,
+            "end_date": end,
+            "hourly": "temperature_2m,apparent_temperature,wind_speed_10m,cloud_cover,shortwave_radiation",
+            "wind_speed_unit": "ms",
+            "models": PINNED_MODEL,
+            "timezone": "UTC",
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    h = resp.json()["hourly"]
+    return pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(h["time"], utc=True),
+            "temperature_c": h["temperature_2m"],
+            "apparent_temperature_c": h["apparent_temperature"],
+            "wind_speed_ms": h["wind_speed_10m"],
+            "cloud_cover_pct": h["cloud_cover"],
+            "shortwave_radiation_wm2": h["shortwave_radiation"],
+        }
+    )
+
+
 _FETCHERS = {
     "open_meteo_historical": fetch_open_meteo_historical,
     "nasa_power": fetch_nasa_power,
     "open_meteo_nowcast_archive": fetch_open_meteo_nowcast_archive,
     "open_meteo_day_ahead": fetch_open_meteo_day_ahead,
+    "open_meteo_live_forecast": fetch_open_meteo_live_forecast,
 }
 
 _MIN_START = {

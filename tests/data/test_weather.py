@@ -2,11 +2,13 @@ import pandas as pd
 import pytest
 
 from edf.data.weather import (
+    _FETCHERS,
     DAY_AHEAD_ARCHIVE_START,
     GB_CITIES,
     NOWCAST_ARCHIVE_START,
     _population_weights,
     fetch_open_meteo_day_ahead,
+    fetch_open_meteo_live_forecast,
     fetch_open_meteo_nowcast_archive,
     population_weighted_gb_series,
 )
@@ -35,6 +37,10 @@ def test_archive_start_constants_not_moved_accidentally():
     # or silently accepting all-null "day ahead" data, as if either were real.
     assert NOWCAST_ARCHIVE_START == pd.Timestamp("2024-03-06", tz="UTC")
     assert DAY_AHEAD_ARCHIVE_START == pd.Timestamp("2024-03-07", tz="UTC")
+
+
+def test_live_forecast_is_registered_and_has_the_shared_column_contract():
+    assert _FETCHERS["open_meteo_live_forecast"] is fetch_open_meteo_live_forecast
 
 
 def test_population_weighted_series_matches_manual_weighted_average():

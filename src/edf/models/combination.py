@@ -14,6 +14,13 @@ from __future__ import annotations
 
 import pandas as pd
 
+# Verified out-of-sample (notebooks/20, extended fit set 2021-06-14..2024-06-30, evaluated on
+# 2024 H2, unchanged from the H1-only fit's 0.1648): the project's headline result, "our model
+# blended with NDF beats NDF alone", uses this weight on our own point model. Only meaningful at
+# NDF's own cardinal-point lead time (~1d ahead) -- see `notebooks/21`'s "final result" and
+# PLAN.md Week 8.
+HEADLINE_COMBINATION_WEIGHT = 0.1744
+
 
 def fit_combination_weight(y_true: pd.Series, pred_a: pd.Series, pred_b: pd.Series) -> float:
     """Minimum-variance combination weight on `pred_a` (weight on `pred_b` is `1 - w`).

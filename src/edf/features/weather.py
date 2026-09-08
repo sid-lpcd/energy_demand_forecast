@@ -54,17 +54,14 @@ def cumulative_degree(degree: pd.Series, window_periods: int) -> pd.Series:
     return degree.rolling(window_periods, min_periods=window_periods).sum()
 
 
-def load_weather_series(
-    source: str, index: pd.DatetimeIndex, raw_dir: Path = DEFAULT_RAW_DIR
-) -> pd.DataFrame:
-    """Load one hourly weather source and interpolate it onto `index` (half-hourly).
+def interpolate_hourly_to_index(hourly: pd.DataFrame, index: pd.DatetimeIndex) -> pd.DataFrame:
+    """Interpolate an hourly-or-finer, `timestamp`-indexed weather frame onto `index` (half-hourly).
 
     Points in `index` outside the source's own time range come back NaN
     (interpolation doesn't extrapolate) -- callers drop those via
     `edf.features.demand.build_feature_table`'s NaN-row handling, same as any other
     feature's warm-up period.
     """
-    hourly = pd.read_parquet(raw_dir / f"{source}.parquet").set_index("timestamp").sort_index()
     combined_index = hourly.index.union(index)
     # limit_area="inside": fill only between two real observations, never
     # extrapolate past the source's actual start/end (pandas' interpolate()
@@ -74,15 +71,38 @@ def load_weather_series(
     return interpolated.reindex(index)
 
 
+def load_weather_series(
+    source: str, index: pd.DatetimeIndex, raw_dir: Path = DEFAULT_RAW_DIR
+) -> pd.DataFrame:
+    """Load one hourly weather source parquet and interpolate it onto `index` (half-hourly)."""
+    hourly = pd.read_parquet(raw_dir / f"{source}.parquet").set_index("timestamp").sort_index()
+    return interpolate_hourly_to_index(hourly, index)
+
+
+def _add_degree_columns(weather: pd.DataFrame) -> pd.DataFrame:
+    weather["heating_degree"] = heating_degree(weather["temperature_c"])
+    weather["cooling_degree"] = cooling_degree(weather["temperature_c"])
+    return weather
+
+
 def build_weather_feature_table(
     source: str, index: pd.DatetimeIndex, raw_dir: Path = DEFAULT_RAW_DIR
 ) -> pd.DataFrame:
-    """Weather feature columns for `source`, aligned to `index`.
+    """Weather feature columns for a named, on-disk `source`, aligned to `index`.
 
     Columns: `temperature_c`, `wind_speed_ms`, `cloud_cover_pct`,
     `shortwave_radiation_wm2`, `heating_degree`, `cooling_degree`.
     """
-    weather = load_weather_series(source, index, raw_dir)
-    weather["heating_degree"] = heating_degree(weather["temperature_c"])
-    weather["cooling_degree"] = cooling_degree(weather["temperature_c"])
-    return weather
+    return _add_degree_columns(load_weather_series(source, index, raw_dir))
+
+
+def build_weather_feature_table_from_frame(
+    hourly: pd.DataFrame, index: pd.DatetimeIndex
+) -> pd.DataFrame:
+    """Same feature columns as `build_weather_feature_table`, from an already-fetched,
+    `timestamp`-indexed weather frame (e.g. `edf.data.weather.population_weighted_gb_series`'s
+    live-forecast output) rather than one of the on-disk historical/archive sources -- the
+    live-inference app's entry point, since it has no parquet file to read from.
+    """
+    hourly = hourly.set_index("timestamp").sort_index()
+    return _add_degree_columns(interpolate_hourly_to_index(hourly, index))
