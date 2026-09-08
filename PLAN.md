@@ -1027,4 +1027,17 @@ asserting numbers from the debugging session).
   simple Gaussian-process/conformal-prediction baseline) for calibration robustness.
 - A literal GB "duck curve" analysis using transmission-scale wind/solar generation (Elexon BMRS
   fuel mix), per the Week 7 note — embedded generation alone can't reconstruct it.
-- A tiny Streamlit/FastAPI demo that serves a live P10/P50/P90 forecast.
+- **Done (2026-09-08):** a live FastAPI demo (`src/app`) serving real 30min/1h/1d/7d P10/P50/P90
+  forecasts, recomputed from live data on every request — NESO's rolling demand feed and current
+  day-ahead forecast, plus a live Open-Meteo weather forecast. Required persisting the final
+  per-horizon models for the first time (`edf.models.registry`, trained on `TRAIN`+`VALIDATION`
+  restricted to the `open_meteo_day_ahead`-covered window since serving needs a genuinely
+  forecast-like weather input, not ERA5 hindsight) and two new live data fetchers
+  (`edf.data.live_demand`, `edf.data.live_ndf`) that turned out to reuse this project's existing
+  parsing code almost unchanged once the matching live NESO endpoints were found. The `1d`
+  vs.-NDF headline combination is shown as a secondary panel (NDF only publishes ~12 cardinal
+  points/day, not a continuous series) rather than folded into the main 4-tile grid. See
+  `src/app/live_pipeline.py`'s docstring for the settlement-period TTL cache design and
+  `edf.models.registry`'s docstring for the exact per-horizon recipe and its stated limitations
+  (notably: the `7d` model's weather input is more accurate at training time than any real
+  7-day-ahead forecast can be at serve time — a known, stated train/serve gap, not a bug).
