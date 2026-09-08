@@ -65,7 +65,9 @@ import requests
 
 PINNED_MODEL = "ecmwf_ifs025"  # explicit model for sources #3/#4 — see module docstring
 NOWCAST_ARCHIVE_START = pd.Timestamp("2024-03-06", tz="UTC")  # binding var: shortwave_radiation
-DAY_AHEAD_ARCHIVE_START = pd.Timestamp("2024-03-07", tz="UTC")  # latest of the 4 variables' cutovers
+DAY_AHEAD_ARCHIVE_START = pd.Timestamp("2024-03-07", tz="UTC")  # latest cutover among the 5 variables
+# (apparent_temperature_previous_day1 added 2026-09-07: verified empirically non-null from
+# 2024-03-01, earlier than shortwave_radiation_previous_day1's 2024-03-07 — doesn't tighten this bound)
 
 
 class City(NamedTuple):
@@ -98,7 +100,7 @@ def fetch_open_meteo_historical(lat: float, lon: float, start: str, end: str) ->
             "longitude": lon,
             "start_date": start,
             "end_date": end,
-            "hourly": "temperature_2m,wind_speed_10m,cloud_cover,shortwave_radiation",
+            "hourly": "temperature_2m,apparent_temperature,wind_speed_10m,cloud_cover,shortwave_radiation",
             "wind_speed_unit": "ms",
             "timezone": "UTC",
         },
@@ -110,6 +112,7 @@ def fetch_open_meteo_historical(lat: float, lon: float, start: str, end: str) ->
         {
             "timestamp": pd.to_datetime(h["time"], utc=True),
             "temperature_c": h["temperature_2m"],
+            "apparent_temperature_c": h["apparent_temperature"],
             "wind_speed_ms": h["wind_speed_10m"],
             "cloud_cover_pct": h["cloud_cover"],
             "shortwave_radiation_wm2": h["shortwave_radiation"],
@@ -164,7 +167,7 @@ def fetch_open_meteo_nowcast_archive(lat: float, lon: float, start: str, end: st
             "longitude": lon,
             "start_date": start,
             "end_date": end,
-            "hourly": "temperature_2m,wind_speed_10m,cloud_cover,shortwave_radiation",
+            "hourly": "temperature_2m,apparent_temperature,wind_speed_10m,cloud_cover,shortwave_radiation",
             "wind_speed_unit": "ms",
             "models": PINNED_MODEL,
             "timezone": "UTC",
@@ -177,6 +180,7 @@ def fetch_open_meteo_nowcast_archive(lat: float, lon: float, start: str, end: st
         {
             "timestamp": pd.to_datetime(h["time"], utc=True),
             "temperature_c": h["temperature_2m"],
+            "apparent_temperature_c": h["apparent_temperature"],
             "wind_speed_ms": h["wind_speed_10m"],
             "cloud_cover_pct": h["cloud_cover"],
             "shortwave_radiation_wm2": h["shortwave_radiation"],
@@ -197,6 +201,7 @@ def fetch_open_meteo_day_ahead(lat: float, lon: float, start: str, end: str) -> 
         )
     variables = [
         "temperature_2m_previous_day1",
+        "apparent_temperature_previous_day1",
         "wind_speed_10m_previous_day1",
         "cloud_cover_previous_day1",
         "shortwave_radiation_previous_day1",
@@ -221,6 +226,7 @@ def fetch_open_meteo_day_ahead(lat: float, lon: float, start: str, end: str) -> 
         {
             "timestamp": pd.to_datetime(h["time"], utc=True),
             "temperature_c": h["temperature_2m_previous_day1"],
+            "apparent_temperature_c": h["apparent_temperature_previous_day1"],
             "wind_speed_ms": h["wind_speed_10m_previous_day1"],
             "cloud_cover_pct": h["cloud_cover_previous_day1"],
             "shortwave_radiation_wm2": h["shortwave_radiation_previous_day1"],

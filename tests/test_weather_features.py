@@ -4,6 +4,7 @@ import pandas as pd
 from edf.weather_features import (
     build_weather_feature_table,
     cooling_degree,
+    cumulative_degree,
     heating_degree,
     load_weather_series,
 )
@@ -29,6 +30,23 @@ def test_cooling_degree_positive_above_base():
     temps = pd.Series([25.0, 30.0])
     result = cooling_degree(temps)
     assert result.tolist() == [3.0, 8.0]
+
+
+def test_cumulative_degree_sums_trailing_window():
+    degree = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
+    result = cumulative_degree(degree, window_periods=3)
+    # first two entries are NaN (window not yet full); from index 2 onward,
+    # each value is the sum of itself and the two preceding entries.
+    assert result.iloc[:2].isna().all()
+    assert result.iloc[2:].tolist() == [6.0, 9.0, 12.0]
+
+
+def test_cumulative_degree_only_looks_backward():
+    # a spike at the end must not leak into earlier windows' sums
+    degree = pd.Series([0.0, 0.0, 0.0, 100.0])
+    result = cumulative_degree(degree, window_periods=2)
+    assert result.iloc[2] == 0.0
+    assert result.iloc[3] == 100.0
 
 
 def _write_hourly_source(tmp_path, name: str) -> None:

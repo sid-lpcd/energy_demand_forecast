@@ -40,6 +40,20 @@ def cooling_degree(temperature_c: pd.Series, base: float = COOLING_BASE_C) -> pd
     return (temperature_c - base).clip(lower=0)
 
 
+def cumulative_degree(degree: pd.Series, window_periods: int) -> pd.Series:
+    """Trailing rolling sum of a degree-day series over `window_periods` half-hours.
+
+    A persistence proxy for sustained heating/cooling stress -- e.g. day 3 of
+    a heatwave plausibly drives more demand response than day 1 at the same
+    instantaneous temperature, which the point-in-time `heating_degree`/
+    `cooling_degree` value alone can't distinguish. Only looks backward
+    (`rolling`'s default, right-aligned window), so it's exactly as safe at
+    any forecast horizon as the point-in-time degree feature already is --
+    both depend only on weather at or before the window's right edge.
+    """
+    return degree.rolling(window_periods, min_periods=window_periods).sum()
+
+
 def load_weather_series(
     source: str, index: pd.DatetimeIndex, raw_dir: Path = DEFAULT_RAW_DIR
 ) -> pd.DataFrame:
