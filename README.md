@@ -47,18 +47,22 @@ docker build -t edf-demo .
 docker run --rm -p 7860:7860 edf-demo   # http://127.0.0.1:7860/predictions
 ```
 
-To deploy for free on [Hugging Face Spaces](https://huggingface.co/spaces) (Docker SDK):
+To deploy for free on [Render](https://render.com) (Docker-native, no card required as of
+2026 — Hugging Face Spaces changed its Docker SDK to a paid-only, PRO-subscription feature
+mid-2026, so it's no longer a free option for this):
 
-1. Create a new Space, SDK = Docker.
-2. Add it as a git remote and push this repo to it (the Space builds the root `Dockerfile`
-   automatically — no extra config needed; it already exposes port 7860, which Spaces expects):
-   ```bash
-   git remote add space https://huggingface.co/spaces/<your-username>/<space-name>
-   git push space main
-   ```
-3. The Space rebuilds on every push. `models_registry/` is committed to the repo (small, joblib
-   artifacts, same "worth version-controlling" reasoning as `calendar_events.py`'s hand-curated
-   table), so no separate model upload/training step is needed at deploy time.
+1. Push this repo to GitHub (Render deploys from a connected repo, not a direct `git push`).
+2. In the Render dashboard: New → Web Service → connect the repo → Environment = Docker (it
+   detects the root `Dockerfile` automatically; no build/start command needed since the
+   Dockerfile's `CMD` already binds to Render's injected `$PORT`).
+3. Choose the Free instance type and deploy. `models_registry/` is committed to the repo (small,
+   joblib artifacts, same "worth version-controlling" reasoning as `calendar_events.py`'s
+   hand-curated table), so no separate model upload/training step is needed at deploy time.
+
+Render's free tier sleeps after 15 minutes of inactivity (cold start ~30-60s on the next
+request) — an acceptable tradeoff for a low-traffic personal demo, not a real production setup.
+[Koyeb](https://www.koyeb.com) is a reasonable fallback if that 750-hour/month cap ever binds,
+though its free tier's 0.1 vCPU allocation is tighter for this image's lightgbm/pandas footprint.
 
 Data (`data/raw/`, `data/processed/`) is gitignored and regenerated from free, keyless APIs (NESO,
 Elexon BMRS, Open-Meteo, NASA POWER, Carbon Intensity API) via the modules in `src/edf/data/` — see

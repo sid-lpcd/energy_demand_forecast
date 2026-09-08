@@ -23,8 +23,14 @@ COPY reports/ ./reports/
 RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:${PATH}"
+ENV PORT=7860
 
-# 7860 is Hugging Face Spaces' expected container port for the Docker SDK.
+# 7860 is Hugging Face Spaces' expected container port for its Docker SDK; Render and most other
+# Docker hosts instead inject their own $PORT at runtime and expect the app to bind to it, hence
+# the shell-form CMD below rather than a fixed --port.
 EXPOSE 7860
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# `exec` replaces the shell process with uvicorn (PID 1) so it receives shutdown signals
+# directly, rather than a shell that may not forward them -- shell form is still needed here
+# only for the ${PORT} expansion.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
