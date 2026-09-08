@@ -72,8 +72,24 @@ def settlement_periods_to_utc(dates: pd.Series, periods: pd.Series) -> pd.Series
     SETTLEMENT_DATE's own text format is inconsistent across NESO's yearly
     files (seen: "01-JAN-2020", "01-Jan-23", "2025-01-01"), so dates are parsed
     with `format="mixed"` rather than one fixed strptime format.
+
+    **`dayfirst` must be `False` here (confirmed 2026-09-08, a real bug found
+    only once 2025 data was finally used).** All the DD-MMM-YYYY/YY formats
+    (2020-2024) spell the month out, so day/month order is never ambiguous
+    regardless of `dayfirst` -- but 2025 onward switched to a bare numeric
+    "YYYY-MM-DD" format, and pandas' `dayfirst=True` was found to silently
+    swap month and day *even for this unambiguous ISO string* whenever both
+    components are <=12 (e.g. "2025-01-06" parsed as 2025-06-01) --
+    empirically verified: `pd.to_datetime(["2025-01-06"], format="mixed",
+    dayfirst=True)` returns 2025-06-01. `dayfirst=False` parses all three
+    formats correctly (verified against samples from every year 2020-2025).
+    This silently corrupted roughly 12/31 of every month's rows in the 2025
+    portion of the historic dataset (any day-of-month <=12, except the 12
+    self-symmetric dates where day==month) -- invisible until now because
+    2025 was `TEST`, never evaluated against by anything in this project
+    before the Follow-up 6/7 split extension.
     """
-    local_midnight = pd.to_datetime(dates, format="mixed", dayfirst=True).dt.tz_localize(
+    local_midnight = pd.to_datetime(dates, format="mixed", dayfirst=False).dt.tz_localize(
         "Europe/London"
     )
     utc_midnight = local_midnight.dt.tz_convert("UTC")

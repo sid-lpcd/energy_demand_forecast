@@ -34,6 +34,23 @@ def test_handles_inconsistent_date_formats_across_years():
     assert list(result.dt.date.astype(str)) == ["2020-01-01", "2023-01-01", "2025-01-01"]
 
 
+def test_iso_dates_do_not_get_day_month_swapped():
+    # Regression guard for a real bug found 2026-09-08: pandas' `dayfirst=True`
+    # silently swapped month/day for "YYYY-MM-DD" strings whenever both
+    # components were <=12 (e.g. "2025-01-06" parsed as 2025-06-01), even
+    # though the ISO format is actually unambiguous. `test_handles_inconsistent_
+    # date_formats_across_years` above didn't catch it because "2025-01-01" is
+    # self-symmetric (day == month) -- deliberately use an asymmetric pair here.
+    # Period 20 (~mid-morning local) keeps the UTC calendar date equal to the
+    # local one regardless of BST/GMT, so this isolates the swap bug from the
+    # (correct, separately tested) local-midnight-crosses-UTC-day behavior.
+    dates = pd.Series(["2025-01-06", "2025-06-01", "2025-03-04"])
+    periods = pd.Series([20, 20, 20])
+    result = settlement_periods_to_utc(dates, periods)
+
+    assert list(result.dt.date.astype(str)) == ["2025-01-06", "2025-06-01", "2025-03-04"]
+
+
 def test_fall_back_day_has_50_periods_and_no_duplicate_gap():
     # 30-OCT-2022: UK clocks went back, this is a 25-hour day.
     dates = pd.Series(["30-OCT-2022"] * 50)
