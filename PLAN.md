@@ -1,6 +1,6 @@
 # Plan — Machine Learning for Probabilistic Short-Term Electricity Demand Forecasting in Great Britain
 
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 
 ## Why this project
 
@@ -166,7 +166,9 @@ line.
   validation 2024, test 2025 — for the rest of the project so no week accidentally peeks at test
   data. (COVID's acute disruption falls entirely inside the training window under this split, so
   reported val/test accuracy isn't distorted by it — see Week 6 for how the training-time COVID
-  period is still put to use.)
+  period is still put to use.) **Redefined 2026-09-08 — see the "Follow-up 6: split redefinition"
+  note after Follow-up 5. Every result reported in Weeks 1-7 and Follow-ups 1-5 below used *this*
+  original split (`VALIDATION`=2024); they were not recomputed under the new one.**
 - Plot: full time series, one winter week and one summer week zoomed in, and a demand-by-hour /
   demand-by-day-of-week seasonality plot.
 - **Deliverable (done):** `data/processed/gb_energy_2020_2025.parquet` (with `lockdown_level`) +
@@ -781,6 +783,213 @@ Broader "what else could help" pass beyond large events and NDF. Three ideas sco
 feature set looks close to saturated for what's freely and legitimately available — NDF itself
 remains the highest-leverage lever found, not further feature engineering on our own model.
 
+### Follow-up 4: apparent temperature and multi-day cumulative weather features — one real find
+
+Literature-research pass (arXiv/ScienceDirect search for "what features predict electricity
+demand") surfaced two ideas not yet tried: substituting **apparent ("feels-like") temperature**
+(Open-Meteo's `apparent_temperature`, a heat-index/wind-chill composite) for dry-bulb temperature
+in the degree-day formula, and a **multi-day cumulative** degree-day feature capturing sustained
+heatwave/cold-snap persistence, not just the instantaneous value — see [Short-term power load
+forecasting using deep learning method with multi-day weather cumulative effects](https://www.sciencedirect.com/science/article/pii/S2352484726006037).
+Tested in `notebooks/20_apparent_temp_cumulative_weather_features.ipynb`, same bias-corrected
+point-model recipe and already-tuned hyperparameters as `notebooks/19`.
+
+- **Data prerequisite (done)**: verified live (2026-09-07) that Open-Meteo's `apparent_temperature`
+  is available on all three relevant endpoints (ERA5 archive, nowcast archive, day-ahead Previous
+  Runs) with no tightening of the existing `DAY_AHEAD_ARCHIVE_START` guard (its own cutover,
+  2024-03-01, is earlier than the binding `shortwave_radiation_previous_day1` cutover). Added to
+  `edf.data.weather`'s three relevant fetchers and `edf.weather_features.cumulative_degree` (new,
+  tested, generic trailing rolling-sum helper).
+- **Apparent temperature: null, marginally negative.** Swapping it into `heating_degree`/
+  `cooling_degree` (replacing `temperature_c`) made MAE 0.50% worse and bias slightly worse; the
+  apparent-based degree features rank lower in importance than the plain-temperature ones from
+  `notebooks/08`. **Not adopted.** Plausible reason: `wind_speed_ms` is already a separate feature
+  the model can interact with via tree splits, so folding wind into temperature ahead of time is a
+  less flexible parametrisation of information the model already had, not new information.
+- **Multi-day cumulative degree-days: real, but not for the hypothesised reason.** A window-length
+  sweep (1/2/3/5/7 trailing days) found the literature's "longer persistence helps more" framing
+  backwards for this model: only the **1-day** window beat baseline on both MAE (-0.23%) and bias
+  (16.5% smaller magnitude); every longer window was worse than baseline on MAE, with the bias
+  improvement shrinking monotonically back toward zero by 7 days. Likely explanation: unlike the
+  source paper's models, this one already carries explicit `lag_336`/`trailing_weekly_moving_average`
+  demand-persistence features, so a long cumulative *weather* window mostly duplicates or conflicts
+  with signal the model already has, while a short one adds smoothing the point-in-time value
+  lacks, without duplicating it.
+- **The 1-day cumulative win is targeted, not general — same shape as `notebooks/14`'s bias-fix
+  recipe, from one feature instead of two.** The improvement concentrates almost entirely in
+  `is_hot` (bias -532→-455 MW, 14.5% smaller), `is_high_wind` (-687→-649 MW, 5.6% smaller), and
+  `is_christmas` (-1172→-1024 MW, 12.6% smaller) — precisely the three buckets the existing
+  sample-weighting recipe already up-weights — while untargeted buckets get slightly worse.
+  `heating_degree_1d_cum` ranks 4th of 34 features overall (ahead of `shortwave_radiation_wm2`,
+  `wind_speed_ms`, `lag_336`); `cooling_degree_1d_cum` ranks much lower (24th), consistent with GB
+  demand being heating- not cooling-driven.
+- **Combining both ideas doesn't beat the 1-day-cumulative-alone result** (MAE/bias land between
+  the two individual results) — apparent temperature's small negative effect and the cumulative
+  feature's positive effect partially offset rather than compound.
+- **Decision: adopt `heating_degree_1d_cum`/`cooling_degree_1d_cum` (plain-temperature-based, not
+  apparent-temperature-based) for the point model.** Not yet checked against the quantile/
+  probabilistic model — per `notebooks/14`'s precedent (bias-improving interventions there measurably
+  *worsened* PICP in the same three buckets), this should be tested there directly, not assumed
+  safe, before it's treated as a project-wide default.
+
+**Revised takeaway**: the "close to saturated" conclusion above was one search away from being
+wrong — this is the first from-scratch feature since NDF/fuel-mix to produce a real, adoptable,
+non-null result, and it came from external literature rather than intuition. Worth another targeted
+literature pass before finalizing Week 8's feature set as closed.
+
+### Follow-up 5: forecast combination with NDF closes some of the NESO gap — the first real win there
+
+Different framing from every earlier attempt: not "can our model beat NESO/NDF" (`notebooks/16`,
+`18` — no) and not "can a correction layer on NDF do better" (`notebooks/18`'s residual-correction
+model, barely, and only at the trough) but **"can our model still add value once combined with
+NDF"** — [Bates & Granger (1969)](https://arxiv.org/pdf/2205.04216)'s classical forecast-combination
+result: a linear blend of two forecasts can beat the stronger one alone even when the other is much
+weaker, provided their errors aren't too correlated. Tested in
+`notebooks/20_apparent_temp_cumulative_weather_features.ipynb`'s second half; library code in
+`src/edf/combination.py` (`fit_combination_weight`, `combine_forecasts`), tested.
+
+- **Correction to `notebooks/16`'s finding**: re-checked our model against NDF (not the coarser
+  NESO portal archive) per `CP_TYPE`. NDF beats our model in *every* regime — trough (43.8%), peak
+  (40.8%), and **other (46.9%, its largest margin)** — the opposite of `notebooks/16`'s "we win at
+  other cardinal points" result. That earlier finding was specific to the NESO archive's coarser,
+  staler-lead-time snapshots; it doesn't hold once NDF (denser, fresher) is the comparison. There is
+  no regime, checked so far, where our from-scratch model is the more accurate forecast on its own.
+- **But error correlation is only 0.363, and our model is the more accurate forecast on 33.2% of
+  individual half-hours** despite losing on every aggregate regime — exactly the condition under
+  which Bates-Granger combination is expected to help.
+- **A real, honest, out-of-sample win.** `VALIDATION` split into H1 (2024 H1, fit only) / H2 (2024
+  H2, evaluate only) — never fit and evaluated on the same rows, same walk-forward discipline as
+  everywhere else in this project. Combination weight (≈0.165 on our model) fit on H1 only, applied
+  unchanged to H2: **NDF alone 533.03 → blend 513.05 MAE, a 3.75% improvement** — the first
+  improvement over NDF found by any mechanism (the residual-correction model in `notebooks/18` made
+  things slightly *worse* overall, 534.46 → 542.58).
+- **A more flexible regime-aware LightGBM stacking meta-model is worse, not better** (521.89 vs. the
+  scalar blend's 513.05) — a real overfitting result given only 8,736 H1 rows to fit; its `is_hot`
+  bucket bias flips to +352 MW (a large under-forecast) vs. NDF's -20.50 and the scalar blend's
+  -77.62, learned from H1's winter/spring months and actively wrong in H2's summer ones. Simpler
+  wins, same lesson as this notebook's own apparent-temperature/cumulative-window results and
+  `notebooks/07`'s tuning findings.
+- **Diagnosed and confirmed *why*, then fixed most of it with data already in hand — no new fetch,
+  `TEST` untouched.** H1's single-season block meant `month` never saw values 7-12 during fitting
+  (H2's are entirely unseen categories) and `is_hot` had almost no positive examples — a plausible
+  root cause for the +352 MW bias, not just generic overfitting. Generated genuinely out-of-sample
+  point-model predictions for 2021-06-14 through 2023 via expanding-window walk-forward (train on
+  years strictly before each fold, predict that fold's year — same pattern as Week 3's tuning CV),
+  giving a 52,188-row, three-full-season fit set instead of H1's 8,736-row single block, still
+  evaluated on the *identical*, untouched H2. **Result: the scalar blend barely moves** (weight
+  0.1648→0.1744, MAE 513.05→513.07 — a single parameter was already well-estimated from 6 months)
+  **but the stacking meta-model improves substantially, 521.89→515.28**, and its `is_hot` bias drops
+  from +352.01 to +45.61 (tighter than NDF's own -20.50). Confirms the fit-set diagnosis was right —
+  but **the fixed stacking model still doesn't beat the scalar blend**, so the practical
+  recommendation is unchanged; the reason for it is now "ties at best, adds real complexity for no
+  measured benefit" rather than "badly broken," a cleaner basis for the same conclusion.
+- **The scalar blend's improvement is broad, not targeted** — unlike every earlier "kept" feature in
+  this project's follow-up series (the `is_christmas`/weighting recipe, the 1-day cumulative
+  degree-days above), which each fixed one or two specific buckets at the cost of others, the blend
+  improves `is_cold`, `is_hot`, `is_low_wind`, `is_high_wind` (its biggest single win, bias nearly
+  zeroed: 136.18 → -6.65), `is_christmas`, and `is_weekend` all at once. First broadly-beneficial
+  result in the whole series.
+- **Caveats for Week 8**: (1) the *fit set* is now multi-year/multi-season (2021-06-14 to
+  2024-06-30), but evaluation is still a single H2 window, not full walk-forward CV across multiple
+  rolling evaluation splits too — a more rigorous version would rotate the held-out window as well;
+  (2) the weight is fit once and applied flat across H2 — a deployed version would need periodic
+  recalibration; (3) inherits NDF's own ARCHIVE_START (2021-06-14) limitation, same as
+  `notebooks/18`.
+- **Practical takeaway for the project's headline framing**: the best forecast this project can
+  produce isn't the from-scratch model alone, and isn't NDF alone — it's a simple, cheap combination
+  of the two. Materially better framing for Week 8 than `notebooks/18`'s "NDF is already close to as
+  good as it gets."
+
+### Follow-up 6: split redefinition (2026-09-08) — `VALIDATION` shifted from 2024 to 2025
+
+Prompted by checking whether Follow-up 5's stacking meta-model underperformed the scalar blend
+because of a genuinely narrow (single-season, 8,736-row) fit window — confirmed yes (see
+Follow-up 5's walk-forward-extended-fit subsection) — which raised the broader question of whether
+this project should simply be using more data now that time has passed.
+
+- **What changed**: by 2026-09-08, the original `TEST` year (2025) had fully elapsed and was
+  already sitting in `data/processed/gb_energy_2020_2025.parquet` and the ERA5 weather archive,
+  complete (17,520 rows, zero nulls, sensible 12,803-45,924 MW range) and **never evaluated against
+  by anything in this project** — the original Week 1 split reserved it but nothing ever used it.
+  Promoting it into `VALIDATION` doesn't violate the "never peek at `TEST`" rule: nothing was ever
+  scored against 2025 under the old definition, so relabeling it is choosing to start using an
+  unused year, not looking at a held-out answer key. `TRAIN`/`VALIDATION`/`TEST` all shift forward
+  one year: `TRAIN`=2020-2024 (absorbs the old `VALIDATION`), `VALIDATION`=2025 (the old, untouched
+  `TEST`), `TEST`=2026 (new, provisional).
+- **NDF extended to cover 2025** (`data/raw/elexon_ndf_day_ahead.parquet`, 2021-06-14 to
+  2025-12-31 now, was 2021-06-14 to 2024-12-31) — needed since `notebooks/20`'s combination work
+  depends on it and the new `VALIDATION` year needs NDF coverage too.
+- **2026 checked live, found not yet usable — a real, concrete finding, not a formality.** A 2026
+  NESO resource exists (`Historic Demand Data 2026`, real data through 2026-08-18 at check time),
+  but two things block trusting it yet: (1) the CSV filename pattern changed —
+  `demanddataupdate_2026.csv`, not the `demanddata_{year}.csv` prior years use — `edf.data.download`
+  hasn't been updated for it; (2) NESO's own resource metadata states *"NESO have moved the data
+  source to its new forecast system. We are aware of an issue with missing Scottish transfer
+  data..."* — a live, NESO-acknowledged data-quality issue, not a hypothetical one. `TEST` is set to
+  2026 in `src/edf/config.py` only to satisfy `tests/test_config.py`'s contiguous-splits invariant;
+  the canonical table has no real 2026 rows yet, and `TEST` must not be evaluated against until this
+  is verified the same way every other new source in this project was (weather's archive-start
+  dates, NDF's day-ahead selection rule) — checked live, not assumed from documentation.
+- **What this does *not* mean**: every result in Weeks 1-7 and Follow-ups 1-5 above was computed
+  against the *original* `VALIDATION` (2024, now inside `TRAIN`) — none of it has been recomputed
+  under the new split. Those numbers remain an accurate historical record of what was found at the
+  time; they are simply no longer reproducible by re-running the same notebook against current
+  `config.py` without expecting different figures. Re-running `notebooks/20`'s combination analysis
+  (or any earlier notebook) against the new `VALIDATION`=2025 is worthwhile future work, not done as
+  part of this split change itself — this follow-up is the plumbing/documentation step, not a
+  re-validation of prior findings.
+- **Next step, not yet done**: verify 2026 the way this project verifies every new source before
+  trusting it (live null-scanning for the Scottish-transfer-data gap specifically, update
+  `edf.data.download`'s URL template for the new filename), then define a real `TEST` window once a
+  full year is confirmed clean.
+
+### Follow-up 7: a real data bug, found only because 2025 was finally used — found and fixed
+
+Immediately on retraining under Follow-up 6's new split, NDF's own accuracy against actual demand
+looked four times worse on 2025 (mean abs error 2,535.77) than the median (807) suggested it should
+— a small number of enormous outliers, not noise. Investigated in
+`notebooks/21_data_bug_fix_and_final_2025_result.ipynb`, which honestly reconstructs the bug inline
+from the raw CSV (the fix was already applied to `edf.data.download`/the data files before the
+notebook was written, so it re-derives the *old*, buggy computation independently rather than just
+asserting numbers from the debugging session).
+
+- **Root cause**: `edf.data.download.settlement_periods_to_utc` parses NESO's inconsistent
+  SETTLEMENT_DATE text formats (`"01-JAN-2020"`, `"01-Jan-23"`, `"2025-01-01"`) with
+  `format="mixed"`. The `dayfirst=True` flag — needed for none of the actual formats present, since
+  spelled-out months are never ambiguous — turned out to also silently apply to the *unambiguous*
+  numeric `"YYYY-MM-DD"` format 2025 switched to, swapping month and day whenever both were `<=12`
+  (e.g. `pd.to_datetime(["2025-01-06"], format="mixed", dayfirst=True)` → 2025-06-01). Verified live
+  against NESO's own source (re-fetched fresh): the raw data was always correct; the corruption was
+  introduced entirely by this project's own parsing step.
+- **Scope**: every 2025 (and by the same mechanism, presumably 2026) row with day-of-month `<=12`
+  (except the 12 self-symmetric day==month dates) had its demand/generation/interconnector values
+  silently attributed to the wrong calendar date — roughly 12 of every month's ~30 days.
+- **Why invisible until now**: 2020-2024's CSVs all spell the month out, immune to this specific
+  bug regardless of `dayfirst`. 2025 was the *first* year using the bare numeric format, and 2025
+  was `TEST` under the original split — deliberately never evaluated against by anything in this
+  project. **A concrete vindication of the "never peek at `TEST`" rule for a reason beyond
+  overfitting**: data-quality problems in an untouched slice have no chance to surface until the
+  slice is finally used, no matter how careful the rest of the pipeline is.
+- **A near-miss in the existing test coverage, also fixed**: `tests/data/test_download.py`
+  already had a test for exactly this class of format ambiguity
+  (`test_handles_inconsistent_date_formats_across_years`), but it happened to use `"2025-01-01"` —
+  a self-symmetric date (day==month) the bug doesn't affect — so it passed throughout. Added
+  `test_iso_dates_do_not_get_day_month_swapped` with an asymmetric date pair, confirmed it fails
+  against the old code and passes against the fix.
+- **Fix**: `dayfirst=False` (verified correct against samples from every year 2020-2025); raw and
+  canonical parquets rebuilt from the already-downloaded, always-correct CSVs — no new fetch needed,
+  just a re-parse. `edf.data.ndf`'s NDF data was never affected (different source, different date
+  handling, verified directly).
+- **Final, corrected headline result**: retrained the point model (bias-corrected recipe + this
+  session's adopted 1-day cumulative degree-days) on `TRAIN`=2020-2024, fit the combination weight
+  via expanding-window walk-forward across 2021-2024 (zero overlap with 2025), evaluated once on all
+  of the now-corrected `VALIDATION` (2025) — no H1/H2 split needed this time, a genuinely separate
+  year was available. **NDF alone 593.14 → combined 572.11 MAE, a 3.55% improvement** — closely
+  matching Follow-up 5's 3.75% on the original 2024 split, despite the combination weight being fit
+  on entirely different data and evaluated on an entirely different, non-overlapping year. This is
+  the strongest evidence yet that the combination finding is real and generalizes, not an artifact
+  of one particular split. **This is now the project's final headline forecasting result.**
+
 ## Week 8 — Publish + Impact Estimate
 
 - GitHub repo: proper README, methodology, results, and an explicit **Limitations** section
@@ -791,12 +1000,22 @@ remains the highest-leverage lever found, not further feature engineering on our
   naturally with the Week 5 calibration discussion (no realistically-sized P10/P90 interval "covers"
   a once-in-a-generation demand shock — what matters operationally is fast model re-fitting once a
   regime change is recognized, not pre-emptive coverage of it).
-- **Impact back-of-envelope (the EA-relevant part):** using Elexon/NESO balancing-cost data and the
-  Carbon Intensity API, sketch a rough, clearly-caveated estimate of what a forecast-error
-  reduction of the magnitude found in Weeks 3–5 could plausibly be worth — in £ of avoided
-  balancing cost and/or tCO2 of avoided fossil-backup generation. This is explicitly a **directional
-  estimate, not a causal claim** — say so, and show the arithmetic so a reader can disagree with an
-  assumption rather than just the conclusion.
+- **Impact back-of-envelope (done), `notebooks/22_impact_estimate.ipynb`:** used the *final*
+  headline result (Follow-up 5/7's forecast-combination improvement, 21.03 MW average absolute-error
+  reduction vs. NDF alone on the corrected 2025 `VALIDATION`) rather than an earlier, larger gain
+  against naive baseline — a more honest "what does this project's own work actually add" framing,
+  since NDF was already freely available. Priced two ways: NESO's own half-hourly BSUoS
+  (Balancing Services Use of System) cost data, FY2024-25, matched to this project's own demand data
+  over the identical dates, gives a broad rate (all 6 cost categories, £8.95/MWh — generously treats
+  the whole system-operation bill as forecast-sensitive) and a narrower, more defensible one
+  (`Positive Reserve` + `Energy Imbalance` only, £0.40/MWh); the Carbon Intensity API's CCGT
+  (394 gCO2/kWh, typical marginal plant) and OCGT (651 gCO2/kWh, faster-reacting peaking plant)
+  factors give an emissions range. **Result: ~£74k-£1.65M/year avoided balancing cost, ~72,600-
+  120,000 tCO2/year avoided emissions** — the wide range is presented as the honest answer (public
+  aggregate data can't resolve how much of BSUoS is actually demand-forecast-sensitive), not a
+  flaw; the narrow-rate/CCGT low end is flagged as the more mechanistically defensible single
+  number if one is wanted. Framed explicitly as "combining our model with NDF, not replacing NESO,"
+  since NDF itself is NESO's already-deployed forecast.
 - Write the short technical report: *Machine Learning for Probabilistic Short-Term Electricity
   Demand Forecasting in Great Britain* — structure: motivation → data → methodology → baseline vs.
   ML vs. probabilistic results → calibration → extreme-event/net-demand findings → impact estimate
