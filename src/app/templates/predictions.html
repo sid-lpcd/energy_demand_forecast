@@ -26,6 +26,23 @@
   <p class="fine-print" id="ndf-note"></p>
 </section>
 
+<section id="history-panel" class="history-panel">
+  <h2>How has this performed over the last year?</h2>
+  <p>
+    Daily-averaged actual demand vs. NESO's day-ahead forecast (NDF) vs. our blended forecast, for
+    the trailing 12 months. The "our forecast"/"blended" lines use actual historical weather
+    (not a real forecast) as an input, and the two rightmost points a few days apart reflect actual
+    demand's own reporting lag &mdash; see the note below the chart for both caveats in full.
+  </p>
+  <div class="history-legend">
+    <span class="history-legend-item"><span class="history-swatch history-swatch-actual"></span>Actual demand</span>
+    <span class="history-legend-item"><span class="history-swatch history-swatch-ndf"></span>NDF (NESO)</span>
+    <span class="history-legend-item"><span class="history-swatch history-swatch-blended"></span>Our blend</span>
+  </div>
+  <div id="history-chart" class="history-chart" aria-live="polite">Loading…</div>
+  <p class="fine-print" id="history-note"></p>
+</section>
+
 <template id="horizon-card-template">
   <article class="card horizon-card">
     <h2 class="horizon-name"></h2>
@@ -44,4 +61,5 @@
 </template>
 
 <script src="/static/predictions.js"></script>
+<script src="/static/history.js"></script>
 {% endblock %}

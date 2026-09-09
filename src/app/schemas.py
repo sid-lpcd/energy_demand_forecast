@@ -28,3 +28,17 @@ class PredictionResponse(BaseModel):
     weather_as_of: str
     horizons: dict[str, HorizonPrediction]
     ndf_comparison: NdfComparison | None = None
+
+
+class HistoryDay(BaseModel):
+    date: str
+    actual_demand_mw: float | None
+    ndf_forecast_mw: float
+    our_forecast_mw: float
+    blended_forecast_mw: float
+
+
+class HistoryComparisonResponse(BaseModel):
+    days: list[HistoryDay]
+    weather_upper_bound_note: str
+    scottish_transfer_advisory: str

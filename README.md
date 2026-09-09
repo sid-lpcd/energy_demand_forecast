@@ -34,6 +34,14 @@ forecast — recomputing a real 30-minute/1-hour/1-day/7-day prediction on every
 canned demo. See `src/app/live_pipeline.py`'s docstring for the caching/refresh design and
 `src/edf/models/registry.py`'s docstring for exactly which recipe each horizon uses and why.
 
+`/predictions` also shows a trailing-12-months chart (actual demand vs. NDF vs. our blended
+forecast), precomputed by `uv run python -m edf.models.history_comparison` into
+`reports/ndf_comparison_last_year.csv` (committed, like `models_registry/` — the app just reads it,
+never recomputes it live). Re-run that command to refresh the chart. See its docstring for why it
+retrains a separate, genuinely out-of-sample model rather than reusing the live-serving one, and for
+the two caveats it surfaces on the chart (ERA5-hindsight weather as an accuracy upper bound, and
+NESO's open advisory on 2026 demand data).
+
 ```bash
 uv run uvicorn app.main:app --reload   # http://127.0.0.1:8000/predictions
 ```

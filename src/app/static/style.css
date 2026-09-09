@@ -6,6 +6,8 @@
   --text-muted: #5b6270;
   --accent: #2f6fed;
   --accent-track: #dde6fb;
+  --line-actual: #1a1d23;
+  --line-ndf: #c2782f;
   color-scheme: light dark;
 }
 
@@ -18,6 +20,8 @@
     --text-muted: #9aa1af;
     --accent: #6d97f7;
     --accent-track: #2a3550;
+    --line-actual: #eceef2;
+    --line-ndf: #e2a765;
   }
 }
 
@@ -199,6 +203,49 @@ main {
 .ndf-stats dd { margin: 0; font-size: 1.15rem; font-weight: 600; }
 
 .fine-print { color: var(--text-muted); font-size: 0.8rem; }
+
+.history-panel {
+  margin-top: 2.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.history-panel h2 { margin-top: 0; font-size: 1.1rem; }
+.history-panel p { color: var(--text-muted); font-size: 0.9rem; }
+
+.history-legend {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.history-legend-item { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.history-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.history-swatch-actual { background: var(--line-actual); }
+.history-swatch-ndf { background: var(--line-ndf); }
+.history-swatch-blended { background: var(--accent); }
+
+.history-chart { width: 100%; }
+.history-chart-svg { width: 100%; height: auto; display: block; }
+
+.history-gridline { stroke: var(--border); stroke-width: 1; }
+.history-axis-label { fill: var(--text-muted); font-size: 10px; }
+
+.history-line { stroke-width: 2; }
+.history-line-actual { stroke: var(--line-actual); }
+.history-line-ndf { stroke: var(--line-ndf); }
+.history-line-blended { stroke: var(--accent); }
 
 .report .report-toc { margin-bottom: 1.5rem; }
 .report .report-toc a { margin-right: 1rem; }

@@ -16,6 +16,11 @@ data/processed/*
 reports/*
 !reports/.gitkeep
 !reports/*.md
+# Exception: the live app (src/app) reads this at request time and has no access to the raw
+# historical data needed to regenerate it (data/ is gitignored, not shipped to Render) -- same
+# "committed because the deployed app needs it" reasoning as models_registry/. Refresh with
+# `uv run python -m edf.models.history_comparison`.
+!reports/ndf_comparison_last_year.csv
 
 # Secrets
 .env
