@@ -5,6 +5,8 @@ public data — walk-forward validated throughout, benchmarked against NESO's ow
 forecasts, and closed out with a directional estimate of real-world impact.
 
 **Read the full write-up: [`reports/technical_report.md`](reports/technical_report.md).**
+**Try the live demo: [energy-forecast.sid-silva.com](https://energy-forecast.sid-silva.com/predictions)**
+(free-tier host — sleeps after 15min idle, first load can take ~30-60s to wake up).
 
 ## Headline result
 
@@ -116,6 +118,7 @@ data/             gitignored; raw + processed tables, regenerated from source
 
 ## Status
 
-Week 8 (publish + impact estimate) in progress — the technical report and impact estimate are
-drafted; repo polish and a final limitations pass remain. See PLAN.md's Week 8 section for the exact
-remaining checklist.
+Complete: all 8 planned weeks plus follow-up work, technical report and impact estimate written,
+live demo deployed at [energy-forecast.sid-silva.com](https://energy-forecast.sid-silva.com/predictions).
+See `PLAN.md`'s Stretch section for possible future extensions (not required for this project's
+scope).
