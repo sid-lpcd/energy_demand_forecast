@@ -128,6 +128,36 @@ def test_live_forecast_multi_raises_after_exhausting_retries(monkeypatch):
         fetch_open_meteo_live_forecast_multi(GB_CITIES, "2026-01-01", "2026-01-02")
 
 
+def test_live_forecast_multi_uses_proxy_url_when_env_var_set(monkeypatch):
+    calls = []
+
+    def fake_get(url, params, timeout):
+        calls.append(url)
+        return _FakeResponse(200, _live_forecast_payload({city.name: 1.0 for city in GB_CITIES}))
+
+    monkeypatch.setattr(weather_module.requests, "get", fake_get)
+    monkeypatch.setenv("OPEN_METEO_LIVE_FORECAST_URL", "https://weather-proxy.example.vercel.app/api/forecast")
+
+    fetch_open_meteo_live_forecast_multi(GB_CITIES, "2026-01-01", "2026-01-02")
+
+    assert calls == ["https://weather-proxy.example.vercel.app/api/forecast"]
+
+
+def test_live_forecast_multi_defaults_to_open_meteo_directly(monkeypatch):
+    calls = []
+
+    def fake_get(url, params, timeout):
+        calls.append(url)
+        return _FakeResponse(200, _live_forecast_payload({city.name: 1.0 for city in GB_CITIES}))
+
+    monkeypatch.setattr(weather_module.requests, "get", fake_get)
+    monkeypatch.delenv("OPEN_METEO_LIVE_FORECAST_URL", raising=False)
+
+    fetch_open_meteo_live_forecast_multi(GB_CITIES, "2026-01-01", "2026-01-02")
+
+    assert calls == ["https://api.open-meteo.com/v1/forecast"]
+
+
 def test_population_weighted_live_forecast_matches_manual_weighted_average(monkeypatch):
     temps = {city.name: city.population_millions for city in GB_CITIES}
 

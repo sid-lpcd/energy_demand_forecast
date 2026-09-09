@@ -56,6 +56,7 @@ Documented as a stated simplification (see PLAN.md).
 from __future__ import annotations
 
 import argparse
+import os
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -65,6 +66,11 @@ import pandas as pd
 import requests
 
 PINNED_MODEL = "ecmwf_ifs025"  # explicit model for sources #3/#4 — see module docstring
+# Optional proxy in front of Open-Meteo's live Forecast API (see weather-proxy/README.md) --
+# routes around Open-Meteo's per-IP rate limit hitting Render's shared egress IP pool in
+# production. Falls back to calling Open-Meteo directly when unset (local dev, tests, CI).
+OPEN_METEO_LIVE_FORECAST_URL_ENV = "OPEN_METEO_LIVE_FORECAST_URL"
+_DEFAULT_OPEN_METEO_LIVE_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 NOWCAST_ARCHIVE_START = pd.Timestamp("2024-03-06", tz="UTC")  # binding var: shortwave_radiation
 DAY_AHEAD_ARCHIVE_START = pd.Timestamp("2024-03-07", tz="UTC")  # latest cutover among the 5 variables
 # (apparent_temperature_previous_day1 added 2026-09-07: verified empirically non-null from
@@ -295,9 +301,15 @@ def fetch_open_meteo_live_forecast_multi(
     Open-Meteo's Forecast API accepts comma-separated `latitude`/`longitude` lists and returns one
     `hourly` block per location. Cuts the live-inference app's per-refetch request count from one
     per city to one total, which is what tripped Open-Meteo's free-tier rate limit in production
-    (see `app.live_pipeline`)."""
+    (see `app.live_pipeline`).
+
+    Calls Open-Meteo directly unless `OPEN_METEO_LIVE_FORECAST_URL` is set, in which case it calls
+    that URL instead (with the same query params) -- see `weather-proxy/README.md` for the
+    Vercel-proxy deployment this supports, to get a different egress IP than Render's shared pool.
+    """
+    url = os.environ.get(OPEN_METEO_LIVE_FORECAST_URL_ENV, _DEFAULT_OPEN_METEO_LIVE_FORECAST_URL)
     resp = _get_with_retry(
-        "https://api.open-meteo.com/v1/forecast",
+        url,
         params={
             "latitude": ",".join(str(c.lat) for c in cities),
             "longitude": ",".join(str(c.lon) for c in cities),

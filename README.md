@@ -64,6 +64,13 @@ request) — an acceptable tradeoff for a low-traffic personal demo, not a real 
 [Koyeb](https://www.koyeb.com) is a reasonable fallback if that 750-hour/month cap ever binds,
 though its free tier's 0.1 vCPU allocation is tighter for this image's lightgbm/pandas footprint.
 
+**Optional — if live weather 429s recur:** Render's free tier shares its outbound IP pool with
+other Render customers, and Open-Meteo's free API rate-limits by client IP, so this app's live
+forecast call can occasionally get 429'd by *other* apps' traffic. `weather-proxy/` is a one-file
+Vercel function that proxies the same call through a different host/IP; see its README to deploy
+it, then set `OPEN_METEO_LIVE_FORECAST_URL` to the deployed URL in Render's Environment tab. The
+app calls Open-Meteo directly when this env var is unset, so it's opt-in.
+
 Data (`data/raw/`, `data/processed/`) is gitignored and regenerated from free, keyless APIs (NESO,
 Elexon BMRS, Open-Meteo, NASA POWER, Carbon Intensity API) via the modules in `src/edf/data/` — see
 [`PLAN.md`](PLAN.md)'s "Data sources" table for exactly which endpoint backs which feature.
