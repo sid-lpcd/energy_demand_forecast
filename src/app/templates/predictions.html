@@ -48,8 +48,13 @@
     </div>
     <button type="button" id="history-reset-zoom" class="button" hidden>Reset zoom</button>
   </div>
-  <div id="history-chart" class="history-chart" aria-live="polite">Loading…</div>
-  <p class="fine-print">Drag on the chart to zoom into a date range.</p>
+  <div id="history-charts" class="history-charts">
+    <div id="history-chart" class="history-chart" aria-live="polite">Loading…</div>
+    <p class="history-diff-label">Forecast error vs. actual (NDF and our blend)</p>
+    <div id="history-diff-chart" class="history-diff-chart"></div>
+    <div id="history-tooltip" class="history-tooltip" hidden></div>
+  </div>
+  <p class="fine-print">Drag on the chart to zoom into a date range; hover for exact values.</p>
   <p class="fine-print" id="history-note"></p>
 </section>
 

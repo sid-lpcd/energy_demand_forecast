@@ -265,10 +265,21 @@ main {
 
 #history-reset-zoom { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
 
+.history-charts { position: relative; }
 .history-chart { width: 100%; }
+.history-diff-chart { width: 100%; }
 .history-chart-svg { width: 100%; height: auto; display: block; touch-action: none; cursor: crosshair; }
 
+.history-diff-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 0.75rem 0 0.15rem;
+}
+
 .history-gridline { stroke: var(--border); stroke-width: 1; }
+.history-zero-line { stroke: var(--text-muted); }
 .history-axis-label { fill: var(--text-muted); font-size: 10px; }
 
 .history-line { stroke-width: 2; }
@@ -277,6 +288,24 @@ main {
 .history-line-blended { stroke: var(--accent); }
 
 .history-selection { fill: var(--accent); opacity: 0.15; stroke: var(--accent); stroke-width: 1; }
+.history-crosshair { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+
+.history-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 5;
+  white-space: nowrap;
+}
+
+.history-tooltip-date { font-weight: 600; margin-bottom: 0.2rem; }
+.history-tooltip .history-swatch { margin-right: 0.35rem; }
 
 .report .report-toc { margin-bottom: 1.5rem; }
 .report .report-toc a { margin-right: 1rem; }
