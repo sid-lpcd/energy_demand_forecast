@@ -236,8 +236,37 @@ main {
 .history-swatch-ndf { background: var(--line-ndf); }
 .history-swatch-blended { background: var(--accent); }
 
+.history-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.history-range-buttons { display: flex; gap: 0.4rem; }
+
+.history-range-btn {
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.history-range-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+#history-reset-zoom { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+
 .history-chart { width: 100%; }
-.history-chart-svg { width: 100%; height: auto; display: block; }
+.history-chart-svg { width: 100%; height: auto; display: block; touch-action: none; cursor: crosshair; }
 
 .history-gridline { stroke: var(--border); stroke-width: 1; }
 .history-axis-label { fill: var(--text-muted); font-size: 10px; }
@@ -246,6 +275,8 @@ main {
 .history-line-actual { stroke: var(--line-actual); }
 .history-line-ndf { stroke: var(--line-ndf); }
 .history-line-blended { stroke: var(--accent); }
+
+.history-selection { fill: var(--accent); opacity: 0.15; stroke: var(--accent); stroke-width: 1; }
 
 .report .report-toc { margin-bottom: 1.5rem; }
 .report .report-toc a { margin-right: 1rem; }

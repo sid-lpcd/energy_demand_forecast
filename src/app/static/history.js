@@ -6,6 +6,11 @@ const HISTORY_SERIES = [
   { key: "ndf_forecast_mw", cls: "history-line-ndf" },
   { key: "blended_forecast_mw", cls: "history-line-blended" },
 ];
+const HISTORY_MIN_ZOOM_DAYS = 3; // shortest range a drag-zoom can select
+
+let historyAllDays = [];
+let historyViewStart = 0;
+let historyViewEnd = 0; // inclusive indices into historyAllDays
 
 function svgEl(tag, attrs) {
   const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -27,6 +32,54 @@ function pathFromSeries(values, xScale, yScale) {
     drawing = true;
   });
   return d.trim();
+}
+
+function attachDragZoom(svg, days, xScale, pad, innerWidth) {
+  let startIndex = null;
+  let selectionRect = null;
+
+  const indexFromClientX = (clientX) => {
+    const rect = svg.getBoundingClientRect();
+    const scale = HISTORY_CHART_WIDTH / rect.width;
+    const svgX = (clientX - rect.left) * scale;
+    const fraction = (svgX - pad.left) / innerWidth;
+    const index = Math.round(fraction * (days.length - 1));
+    return Math.min(days.length - 1, Math.max(0, index));
+  };
+
+  svg.addEventListener("pointerdown", (event) => {
+    startIndex = indexFromClientX(event.clientX);
+    selectionRect = svgEl("rect", {
+      x: xScale(startIndex).toFixed(1), y: pad.top,
+      width: 0, height: HISTORY_CHART_HEIGHT - pad.top - pad.bottom,
+      class: "history-selection",
+    });
+    svg.appendChild(selectionRect);
+    svg.setPointerCapture(event.pointerId);
+  });
+
+  svg.addEventListener("pointermove", (event) => {
+    if (startIndex === null) return;
+    const currentIndex = indexFromClientX(event.clientX);
+    const x1 = xScale(Math.min(startIndex, currentIndex));
+    const x2 = xScale(Math.max(startIndex, currentIndex));
+    selectionRect.setAttribute("x", x1.toFixed(1));
+    selectionRect.setAttribute("width", Math.max(0, x2 - x1).toFixed(1));
+  });
+
+  const finishDrag = (event) => {
+    if (startIndex === null) return;
+    const endIndex = indexFromClientX(event.clientX);
+    const lo = Math.min(startIndex, endIndex);
+    const hi = Math.max(startIndex, endIndex);
+    startIndex = null;
+    selectionRect?.remove();
+    if (hi - lo >= HISTORY_MIN_ZOOM_DAYS) {
+      setHistoryView(historyViewStart + lo, historyViewStart + hi);
+    }
+  };
+  svg.addEventListener("pointerup", finishDrag);
+  svg.addEventListener("pointercancel", finishDrag);
 }
 
 function renderHistoryChart(days) {
@@ -59,7 +112,7 @@ function renderHistoryChart(days) {
     viewBox: `0 0 ${width} ${height}`,
     class: "history-chart-svg",
     role: "img",
-    "aria-label": "Actual demand vs NDF vs our blended forecast, trailing 12 months",
+    "aria-label": "Actual demand vs NDF vs our blended forecast",
   });
 
   const ticks = 4;
@@ -95,8 +148,41 @@ function renderHistoryChart(days) {
     if (d) svg.appendChild(svgEl("path", { d, class: `history-line ${series.cls}`, fill: "none" }));
   }
 
+  attachDragZoom(svg, days, xScale, pad, innerWidth);
   container.appendChild(svg);
 }
+
+function updateRangeButtons() {
+  const fullRange = historyViewStart === 0 && historyViewEnd === historyAllDays.length - 1;
+  const viewLength = historyViewEnd - historyViewStart + 1;
+  document.querySelectorAll(".history-range-btn").forEach((button) => {
+    const isAll = button.dataset.days === "all";
+    const matches = isAll ? fullRange : !fullRange && Number(button.dataset.days) === viewLength;
+    button.classList.toggle("active", matches);
+  });
+  document.getElementById("history-reset-zoom").hidden = fullRange;
+}
+
+function setHistoryView(start, end) {
+  historyViewStart = Math.max(0, start);
+  historyViewEnd = Math.min(historyAllDays.length - 1, end);
+  renderHistoryChart(historyAllDays.slice(historyViewStart, historyViewEnd + 1));
+  updateRangeButtons();
+}
+
+function applyPresetRange(daysArg) {
+  if (daysArg === "all") {
+    setHistoryView(0, historyAllDays.length - 1);
+  } else {
+    const count = Number(daysArg);
+    setHistoryView(historyAllDays.length - count, historyAllDays.length - 1);
+  }
+}
+
+document.querySelectorAll(".history-range-btn").forEach((button) => {
+  button.addEventListener("click", () => applyPresetRange(button.dataset.days));
+});
+document.getElementById("history-reset-zoom").addEventListener("click", () => applyPresetRange("all"));
 
 async function loadHistory() {
   const chart = document.getElementById("history-chart");
@@ -106,7 +192,8 @@ async function loadHistory() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
 
-    renderHistoryChart(data.days);
+    historyAllDays = data.days;
+    setHistoryView(0, historyAllDays.length - 1);
     note.textContent = data.days.length
       ? `${data.weather_upper_bound_note} ${data.scottish_transfer_advisory}`
       : "Historical comparison not available in this deployment.";

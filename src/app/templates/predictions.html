@@ -39,7 +39,17 @@
     <span class="history-legend-item"><span class="history-swatch history-swatch-ndf"></span>NDF (NESO)</span>
     <span class="history-legend-item"><span class="history-swatch history-swatch-blended"></span>Our blend</span>
   </div>
+  <div class="history-controls">
+    <div class="history-range-buttons" role="group" aria-label="Chart time range">
+      <button type="button" class="history-range-btn" data-days="30">1M</button>
+      <button type="button" class="history-range-btn" data-days="90">3M</button>
+      <button type="button" class="history-range-btn" data-days="180">6M</button>
+      <button type="button" class="history-range-btn" data-days="all">1Y</button>
+    </div>
+    <button type="button" id="history-reset-zoom" class="button" hidden>Reset zoom</button>
+  </div>
   <div id="history-chart" class="history-chart" aria-live="polite">Loading…</div>
+  <p class="fine-print">Drag on the chart to zoom into a date range.</p>
   <p class="fine-print" id="history-note"></p>
 </section>
 
