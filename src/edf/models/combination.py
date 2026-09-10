@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-# Verified out-of-sample (notebooks/20, extended fit set 2021-06-14..2024-06-30, evaluated on
-# 2024 H2, unchanged from the H1-only fit's 0.1648): the project's headline result, "our model
-# blended with NDF beats NDF alone", uses this weight on our own point model. Only meaningful at
-# NDF's own cardinal-point lead time (~1d ahead) -- see `notebooks/21`'s "final result" and
-# PLAN.md Week 8.
-HEADLINE_COMBINATION_WEIGHT = 0.1744
+# Verified out-of-sample on the corrected data (notebooks/21, walk-forward fit 2021-2024, zero
+# overlap with the evaluation year): the project's headline result, "our model blended with NDF
+# beats NDF alone" (NDF alone 593.14 MAE -> blend 572.11 MAE, -3.55%), uses this weight on our own
+# point model. Only meaningful at NDF's own cardinal-point lead time (~1d ahead) -- see PLAN.md
+# Week 8 / Follow-up 7. Supersedes notebooks/20's pre-bug-fix 0.1744, fit before the
+# settlement-date parsing bug (PLAN.md Follow-up 7) was found and fixed.
+HEADLINE_COMBINATION_WEIGHT = 0.1717
 
 
 def fit_combination_weight(y_true: pd.Series, pred_a: pd.Series, pred_b: pd.Series) -> float:

@@ -1094,3 +1094,51 @@ asserting numbers from the debugging session).
   `edf.models.registry`'s docstring for the exact per-horizon recipe and its stated limitations
   (notably: the `7d` model's weather input is more accurate at training time than any real
   7-day-ahead forecast can be at serve time — a known, stated train/serve gap, not a bug).
+- **Done (2026-09-10): statistical significance testing (p-values + FDR correction) for this
+  project's headline comparisons — `notebooks/24_significance_testing.ipynb`,
+  `src/edf/significance.py`.** A real gap, not something PLAN.md previously asked for: every
+  comparison across Weeks 1-8 reported a point-estimate delta ("27.65% improvement", "3.55%
+  improvement") with no test of whether it's distinguishable from noise, and no correction for
+  the dozens of comparisons run over the project's life. Fixed with the standard tool for
+  autocorrelated forecast-error comparisons — the **Diebold-Mariano test** (1995, Newey-West/
+  Bartlett HAC variance, truncation lag `h-1` for an `h`-period horizon; a plain paired t-test
+  would assume i.i.d. errors, which GB demand's strong day/week autocorrelation violates, giving
+  artificially small p-values) — plus **Benjamini-Hochberg FDR correction** (1995) across every
+  comparison tested together, since these are independent exploratory questions, not one
+  confirmatory claim (Bonferroni would be needlessly conservative for that setting).
+  - **Scope, stated honestly**: retesting *every* notebook in this project's history was
+    infeasible — a single walk-forward-CV tuning pass under the current split (`TRAIN`=2020-2024)
+    was empirically measured at ~12 minutes, and this project has run dozens of comparisons.
+    Six of the most load-bearing, currently-live comparisons were retested instead, all trained on
+    `TRAIN` only and evaluated on the full, untouched `VALIDATION` (2025) — the current, corrected
+    split — so every p-value below is genuinely out-of-sample: the NDF-blend headline result and
+    our-model-vs-NDF (reusing `notebooks/21`'s already-adopted, already-tuned recipe, no re-tuning
+    needed), the Week 4 weather ablation, the Week 4b outturn- and self-forecast-wind/solar
+    ablations, and the Stretch-goal CQR-vs-baseline PICP calibration comparison (the last three
+    pairs use `edf.models.forecast.DEFAULT_LGBM_PARAMS` identically on both sides — untuned, but
+    an ablation only needs matched model capacity to isolate the feature's own effect).
+  - **All six survive BH-FDR correction at α=0.05.** The project's most important and most novel
+    claim — the NDF-blend headline result — is real: mean loss differential -24.81 MW/row,
+    DM=-6.04, **p=1.55e-9** (q=1.55e-9 after correction). `our_model_vs_ndf` confirms NDF's edge
+    is real and large (p=5.2e-53). The Week 4 weather ablation (p=6.9e-51) and the Week 4b outturn
+    wind/solar ceiling (p=7.7e-16) both reproduce cleanly under a different split and untuned
+    hyperparameters — strong evidence neither was a tuning-run artifact. The CQR calibration fix
+    is the most significant result of the six (p≈4.7e-255) — expected, not suspicious: CQR applies
+    a single near-uniform additive correction to every row, so the coverage-indicator differential
+    has very low row-to-row variance, which is exactly what drives an extreme DM statistic.
+  - **One real, honestly-reported update to an earlier conclusion**: self-forecast wind/solar
+    (Week 4b's "0.09% improvement, noise, not signal" finding) turns out to be statistically
+    significant here (p=0.0042, still the weakest/borderline result of the six) — a genuine ~4.1%
+    MAE reduction under the current split/untuned recipe, not the ~0% found under the original
+    split's CV-tuned recipe. Both are legitimate findings under their own configurations, not a
+    contradiction — see the notebook for the full reconciliation. This is also the clearest
+    illustration in the whole exercise of *why* both statistical and practical significance need
+    reporting: with n=17,519 half-hourly rows, even this project's smallest, most marginal effect
+    clears p<0.05, which doesn't by itself make the feature worth the added pipeline complexity —
+    `notebooks/11`'s practical recommendation (don't deploy it; the outturn ceiling is far more
+    valuable than the noisy deployable version) still stands, just on more precisely-characterized
+    footing ("small but real" rather than "zero").
+  - **Not claimed**: this is six comparisons, not a re-audit of the whole project — the many
+    bucket-level/extreme-event findings (`notebooks/14`/`15`/`19`/`20`) were not retested, and are
+    a more realistic place to expect FDR correction to actually flip a conclusion than the six
+    large, already-robust headline results chosen here.

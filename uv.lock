@@ -904,7 +904,6 @@ dependencies = [
     { name = "markdown" },
     { name = "matplotlib" },
     { name = "mlflow" },
-    { name = "ngboost" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pandas" },
@@ -913,8 +912,6 @@ dependencies = [
     { name = "python-multipart" },
     { name = "requests" },
     { name = "scikit-learn" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -922,6 +919,7 @@ dependencies = [
 dev = [
     { name = "ipykernel" },
     { name = "jupyter" },
+    { name = "ngboost" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -936,7 +934,6 @@ requires-dist = [
     { name = "markdown", specifier = ">=3.10.3" },
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "mlflow", specifier = ">=3.16.0" },
-    { name = "ngboost", specifier = ">=0.5.11" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=15.0" },
@@ -944,7 +941,6 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "requests", specifier = ">=2.31" },
     { name = "scikit-learn", specifier = ">=1.4" },
-    { name = "scipy", specifier = ">=1.17.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.4" },
 ]
 
@@ -952,6 +948,7 @@ requires-dist = [
 dev = [
     { name = "ipykernel", specifier = ">=6.29" },
     { name = "jupyter", specifier = ">=1.0" },
+    { name = "ngboost", specifier = ">=0.5.11" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.5" },
 ]

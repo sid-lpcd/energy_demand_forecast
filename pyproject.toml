@@ -20,8 +20,6 @@ dependencies = [
     "jinja2>=3.1.6",
     "markdown>=3.10.3",
     "python-multipart>=0.0.32",
-    "ngboost>=0.5.11",
-    "scipy>=1.17.1",
 ]
 
 [dependency-groups]
@@ -30,6 +28,10 @@ dev = [
     "ruff>=0.5",
     "jupyter>=1.0",
     "ipykernel>=6.29",
+    # ngboost (+ its scipy/sympy/lifelines transitive deps) is only used by the Week 8 stretch-goal
+    # calibration comparison (notebooks/23, src/edf/models/distributional.py) and its tests -- never
+    # imported by src/app's live-serving path, so it doesn't belong in the Docker image's runtime deps.
+    "ngboost>=0.5.11",
 ]
 
 [build-system]

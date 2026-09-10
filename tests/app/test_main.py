@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import app.live_pipeline as live_pipeline_module
 from app.main import app
+from edf.models.combination import HEADLINE_COMBINATION_WEIGHT
 
 
 def _fake_live_inputs(now_utc: pd.Timestamp) -> live_pipeline_module.LiveInputs:
@@ -89,7 +90,7 @@ def test_predict_includes_ndf_comparison_panel(client):
 
     comparison = response.json()["ndf_comparison"]
     assert comparison is not None
-    assert comparison["combination_weight"] == pytest.approx(0.1744)
+    assert comparison["combination_weight"] == pytest.approx(HEADLINE_COMBINATION_WEIGHT)
     assert comparison["ndf_forecast_mw"] == 25000.0
 
 

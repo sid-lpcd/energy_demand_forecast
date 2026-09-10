@@ -83,6 +83,12 @@ deployable accuracy.
 | **+ ERA5 weather (heating/cooling degree-days, wind, cloud, radiation)** | **0.439** | **27.65% MAE reduction — the single largest gain found anywhere in this project** |
 | + ERA5 weather, honest day-ahead-forecast-weather check (2024-03-07-on slice) | ~equal to the ERA5-fed result | 25.84% (ERA5) vs. 26.79% (day-ahead) — nearly all of the weather gain survives contact with realistic forecast-quality weather |
 | + self-forecasted wind/solar (from weather, deployable) | ~no change | 0.09% improvement — the leaky, outturn-fed upper bound was 22.4%, but a from-scratch forecast of wind/solar can't recover it; **not adopted** |
+
+**Significance-tested (§9): is any of this real, or noise?** Re-run independently under a
+Diebold-Mariano test (`notebooks/24_significance_testing.ipynb`) — weather-on vs. weather-off,
+**p = 6.9e-51**; outturn wind/solar vs. none, **p = 7.7e-16**; self-forecast wind/solar vs. none,
+**p = 0.0042** (a genuine update to the "0.09%, noise" framing above — see §9). All three survive
+Benjamini-Hochberg FDR correction alongside three other headline comparisons tested together.
 | + 1-day cumulative degree-days (this session) | modest overall (~0.2%), real bias fix in extreme buckets | see §6 |
 
 **Weather is the standout lever, and it's mostly a proxy effect, not a direct one.**
@@ -146,6 +152,9 @@ infeasible in this project's time budget (one 600-tree NGBoost fit took 862s vs.
 construction, vs. LightGBM's 3.6% needing a rearrangement patch — wasn't enough to make up the gap.
 **Decision: CQR is now applied to every horizon in the live demo** (`edf.models.registry`,
 `app.predict`); NGBoost remains a legitimate idea for later, conditional on a real tuning budget.
+**Significance-tested (§9)**: an independent DM test on the coverage-indicator series (baseline
+non-coverage vs. CQR non-coverage) gives **p ≈ 4.7e-255** — the most significant of every
+comparison tested, expected given CQR's near-uniform per-row correction (see §9).
 
 ## 6. Extreme events and the newest feature finding
 
@@ -188,6 +197,13 @@ window) beat NDF alone on two independent, non-overlapping years:
 |---|---|---|---|---|---|
 | first check | 2024 H1 | 2024 H2 | 533.03 | 513.05 | 3.75% |
 | final, corrected | 2021–2024 (full walk-forward) | all of 2025 | 593.14 | 572.11 | **3.55%** |
+
+**Significance-tested (§9): yes, this is real.** An independently re-run Diebold-Mariano test on
+this exact comparison — blend vs. NDF alone, half-hourly, `VALIDATION`=2025 — gives
+**p = 1.55e-9** (mean loss differential −24.81 MW/row in the blend's favor), and survives
+Benjamini-Hochberg FDR correction alongside five other headline comparisons tested together (§9).
+This is the project's most important and most heavily-scrutinized claim, so it's also the one
+most worth a rigor check beyond a single point-estimate percentage.
 
 A more flexible regime-aware stacking meta-model (LightGBM combining both forecasts plus
 calendar/bucket context) initially did *worse* than the simple blend (overfitting on a
@@ -237,7 +253,56 @@ free, from-scratch model with NESO's own published forecast — a technique not 
 in operational use — would be worth roughly this much per year if adopted." A smaller, more honest
 claim than "beating NESO," and a more useful one for judging whether any of this actually matters.
 
-## 9. Limitations
+## 9. Statistical significance and false-discovery-rate correction
+
+Every result above (§4–§8) reports a point-estimate delta — "27.65% improvement", "3.55%
+improvement" — with no test of whether it's distinguishable from noise, and no correction for the
+dozens of comparisons this project has run over its life. That gap is addressed directly here for
+the project's six most load-bearing, currently-live comparisons
+(`notebooks/24_significance_testing.ipynb`, `src/edf/significance.py`), all trained on `TRAIN`
+(2020–2024) only and evaluated on the full, untouched `VALIDATION` year (2025).
+
+**Method**: the **Diebold-Mariano test** (1995) on the paired per-row loss differential between
+two forecasts, using a Newey-West/Bartlett HAC variance estimator with truncation lag `h−1`
+(`h`=48, the `1d` horizon in half-hourly periods) — the standard tool for this setting, chosen
+over a plain paired t-test because GB demand's strong day/week autocorrelation violates a t-test's
+i.i.d. assumption, understating the true variance and giving artificially small p-values. Then
+**Benjamini-Hochberg FDR correction** (1995) across all six p-values tested together, appropriate
+for a set of independent exploratory questions rather than one confirmatory claim.
+
+| comparison | mean loss diff. | p-value | BH q-value | survives α=0.05? |
+|---|---|---|---|---|
+| blend vs. NDF alone (§7, the project's headline result) | −24.81 MW | 1.55e-9 | 1.55e-9 | yes |
+| our model alone vs. NDF alone (§7) | +336.23 MW | 5.22e-53 | 1.57e-52 | yes |
+| weather-on vs. weather-off (§4) | −359.34 MW | 6.92e-51 | 1.38e-50 | yes |
+| outturn wind/solar vs. none (§4) | −161.29 MW | 7.74e-16 | 1.16e-15 | yes |
+| self-forecast wind/solar vs. none (§4) | −39.05 MW | 0.0042 | 0.0042 | yes |
+| CQR vs. baseline non-coverage (§5) | −0.158 | 4.66e-255 | 2.80e-254 | yes |
+
+**All six survive FDR correction.** With p-values this small — even the weakest, self-forecast
+wind/solar at p=0.0042, clears the 0.05/6≈0.0083 a naive Bonferroni correction would have
+required — there was nothing genuinely borderline in this particular set for BH to catch. That's a
+real result (these six claims are solid), not evidence the correction was pointless: a more
+marginal set of comparisons (e.g. the individual extreme-bucket findings in §6) would be a more
+realistic place to expect FDR correction to actually change a conclusion, and hasn't been tested
+this way yet (see §11).
+
+**One finding changed on re-test, reported honestly rather than smoothed over.** Self-forecast
+wind/solar (§4) was originally found to give a 0.09% MAE change ("noise, not signal") under the
+project's older split and CV-tuned hyperparameters. Under the current split and untuned but
+matched-capacity models, the same comparison shows a small but statistically significant ~4.1% MAE
+reduction (p=0.0042) — a genuine update attributable to the different configuration, not a
+contradiction. It remains the weakest and smallest effect of the six by a wide margin, and doesn't
+overturn the practical recommendation not to deploy it (§4) — but "small, real, and not clearly
+worth the complexity" is a more accurate summary than "zero effect."
+
+**Caveat applying to all six**: statistical significance answers "is this effect distinguishable
+from zero," not "is this effect large enough to matter" — with n=17,519 half-hourly rows, even
+modest effects are detectable, as the self-forecast wind/solar result illustrates directly. The
+practical-significance judgment calls made throughout §4–§8 (e.g. "not adopted", "kept for the
+point model") stand on their own merits and aren't overridden by a small p-value alone.
+
+## 10. Limitations
 
 - **Weather is observed (ERA5 hindsight) for most of the project's date range, not forecast.** The
   one exception — a genuine day-ahead weather forecast archive — only starts 2024-03-07; results
@@ -268,7 +333,7 @@ claim than "beating NESO," and a more useful one for judging whether any of this
   2021–2024/2025 split) — not full walk-forward CV across many rolling windows. Both agreeing this
   closely is reassuring, not conclusive.
 
-## 10. What you'd do with more time
+## 11. What you'd do with more time
 
 - **Give NGBoost (§5) a fair tuning budget.** Its loss in the CQR/NGBoost comparison traces to an
   un-tuned, shallow default base learner, not to the Normal-distribution assumption being wrong — a
@@ -288,3 +353,7 @@ claim than "beating NESO," and a more useful one for judging whether any of this
   point forecast.
 - Economic/social signal features (GDP, unemployment, or news-derived signals) — a UK/Ireland
   academic study found ~6% improvement from this class of feature; not yet tried here.
+- **Extend §9's significance testing to the extreme-bucket findings** (`is_hot`/`is_high_wind`/
+  `is_christmas` bias fixes, the renewable-decile PICP cliff) — smaller, more marginal effects than
+  the six headline comparisons tested so far, and a more realistic place for BH-FDR correction to
+  actually flip a conclusion rather than confirm an already-robust one.
