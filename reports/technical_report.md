@@ -121,6 +121,32 @@ The overconfidence in §4 is not uniform — it concentrates exactly where it ma
   deciles 1–9 and then falls off a cliff at decile 10 (0.52) — calibration failure is a
   concentrated tail phenomenon, accuracy degradation is not.
 
+**Stretch: does a structurally different model fix the overconfidence, rather than just describing
+it?** Two candidates compared head-to-head on `1d`, on a fresh evaluation year (`VALIDATION`=2025):
+Conformalized Quantile Regression (CQR — Romano et al. 2019, a post-hoc correction fit on a held-out
+calibration year) and NGBoost (Duan et al. 2019 — one Normal distribution boosted per row, so
+quantiles come from a single coherent CDF and can't cross by construction). Full comparison in
+[`notebooks/23_calibration_robustness_comparison.ipynb`](../notebooks/23_calibration_robustness_comparison.ipynb).
+
+| model | pinball P10 | pinball P50 | pinball P90 | PICP (nom. 80%) | sharpness |
+|---|---|---|---|---|---|
+| LightGBM quantile (baseline) | 285.35 | **485.91** | 215.33 | **62.6%** | 2,146 MW |
+| LightGBM + CQR | **250.42** | 485.91 (untouched) | 216.27 | **75.1%** | 2,775 MW |
+| NGBoost | 263.99 | 528.95 | 233.36 | 69.1% | 2,643 MW |
+
+**CQR wins outright.** A single scalar correction, fit on one held-out year and costing nothing to
+retrain, lifts PICP from 62.6% to 75.1% — most, not all, of the way to nominal 80% (the shortfall is
+plausibly because the calibration year and the evaluation year aren't perfectly exchangeable, the one
+assumption CQR's guarantee actually needs) — while *improving* lower-tail pinball loss, not just
+widening the interval defensively. **NGBoost, a genuinely different model, lost on every metric here
+— for a specific, honest reason, not because the idea is wrong**: its median forecast is 8.9% worse
+than LightGBM's because matching LightGBM's walk-forward-CV tuning budget was computationally
+infeasible in this project's time budget (one 600-tree NGBoost fit took 862s vs. ~313s for LightGBM's
+*entire* tuned quantile ensemble). Its one clean structural win — zero quantile crossing by
+construction, vs. LightGBM's 3.6% needing a rearrangement patch — wasn't enough to make up the gap.
+**Decision: CQR is now applied to every horizon in the live demo** (`edf.models.registry`,
+`app.predict`); NGBoost remains a legitimate idea for later, conditional on a real tuning budget.
+
 ## 6. Extreme events and the newest feature finding
 
 **COVID-19 lockdown (2020)**, examined as a case study, not a held-out accuracy number (the model
@@ -244,10 +270,11 @@ claim than "beating NESO," and a more useful one for judging whether any of this
 
 ## 10. What you'd do with more time
 
-- Compare LightGBM quantile regression against a genuinely distributional alternative (NGBoost, or
-  a Generalised Pareto Distribution tail model in the style of published GB net-load forecasting
-  work) — the calibration problem in §5 is a structural property of independent per-quantile
-  boosting, not a hyperparameter problem, and needs a structurally different fix.
+- **Give NGBoost (§5) a fair tuning budget.** Its loss in the CQR/NGBoost comparison traces to an
+  un-tuned, shallow default base learner, not to the Normal-distribution assumption being wrong — a
+  proper walk-forward-CV search (deeper trees, more estimators, possibly a skewed `Dist` given this
+  project's own bias findings) is expensive (~15min per fit at this project's data volume) but not
+  yet ruled out as competitive with CQR.
 - A literal GB "duck curve" / net-load analysis using transmission-scale wind/solar generation
   (Elexon BMRS fuel mix) — embedded generation alone can't reconstruct it.
 - Verify the 2026 data source properly (the Scottish-transfer-data gap NESO itself has flagged,

@@ -10,6 +10,7 @@ import pandas as pd
 
 from app.live_pipeline import LiveInputs, build_live_features
 from edf.models.combination import HEADLINE_COMBINATION_WEIGHT, combine_forecasts
+from edf.models.conformal import apply_cqr_correction
 from edf.models.quantile import enforce_monotonic_quantiles
 
 QUANTILE_ALPHAS = (0.1, 0.5, 0.9)
@@ -20,7 +21,11 @@ def predict_all_horizons(registry: dict, live_inputs: LiveInputs) -> dict[str, d
 
     `enforce_monotonic_quantiles` (Week 5, `edf.models.quantile`) fixes up the rare case where
     the independently-trained quantile models cross (P10 > P50 at a given row) -- reused as-is,
-    not reimplemented here.
+    not reimplemented here. `apply_cqr_correction` (`notebooks/23_calibration_robustness_comparison.ipynb`,
+    `edf.models.conformal`) then widens P10/P90 by each horizon's own `cqr_q_hat`
+    (`edf.models.registry`) -- the plain quantile model was found badly overconfident (PICP 62.6%
+    for a nominal 80% interval), and this conformal correction recovers most of that gap. P50 is
+    left untouched; CQR only corrects interval coverage, not the point/median forecast.
     """
     results: dict[str, dict] = {}
     for horizon_name, entry in registry.items():
@@ -34,14 +39,17 @@ def predict_all_horizons(registry: dict, live_inputs: LiveInputs) -> dict[str, d
             for alpha, model in entry["quantiles"].items()
         }
         sorted_quantiles = enforce_monotonic_quantiles(raw_quantiles)
+        lower, upper = apply_cqr_correction(
+            sorted_quantiles[0.1], sorted_quantiles[0.9], metadata["cqr_q_hat"]
+        )
 
         results[horizon_name] = {
             "issue_time": features.issue_time,
             "target_time": features.target_time,
             "point": point,
-            "p10": float(sorted_quantiles[0.1].iloc[0]),
+            "p10": float(lower.iloc[0]),
             "p50": float(sorted_quantiles[0.5].iloc[0]),
-            "p90": float(sorted_quantiles[0.9].iloc[0]),
+            "p90": float(upper.iloc[0]),
         }
     return results
 

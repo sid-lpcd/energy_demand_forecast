@@ -39,6 +39,20 @@ historically (the same reasoning `edf.data.weather`'s docstring already applies 
 `notebooks/14` found it measurably *worsens* PICP (interval calibration) in exactly the buckets it
 targets, even though it improves the point model and even pinball loss. Quantile models always use
 the plain feature set.
+
+**CQR-corrected intervals (all horizons), per `notebooks/23_calibration_robustness_comparison.ipynb`.**
+That notebook found the plain LightGBM quantile model badly overconfident (PICP 62.6% for a nominal
+80% [P10, P90] interval) and that Conformalized Quantile Regression (Romano et al. 2019,
+`edf.models.conformal`) fixes most of the gap (PICP 75.1%) at a modest sharpness cost, for less
+engineering effort than the notebook's other candidate (NGBoost, which lost on every axis there
+because matching LightGBM's tuning budget wasn't computationally feasible). `_fit_quantile_models_with_cqr`
+below applies that same recipe here: the trailing `CQR_CALIBRATION_PERIODS` rows of each horizon's
+quantile-training data are held out of quantile-model fitting entirely (and out of hyperparameter
+tuning) and used only to fit a single scalar correction (`cqr_q_hat`, stored in metadata), applied to
+P10/P90 at serve time (`app.predict`). The point model is unaffected — CQR only touches the interval.
+Only the `1d` horizon was directly validated by the notebook; the same mechanism is applied to every
+horizon here on the reasonable premise that CQR's coverage guarantee doesn't depend on horizon,
+though the achieved-PICP number for 30min/1h/7d hasn't itself been separately checked.
 """
 
 from __future__ import annotations
@@ -60,7 +74,9 @@ from edf.features.buckets import (
 from edf.features.demand import build_feature_table
 from edf.features.generation import capacity_factor
 from edf.features.weather import build_weather_feature_table, cumulative_degree
+from edf.models.conformal import fit_cqr_correction
 from edf.models.forecast import DEFAULT_LGBM_PARAMS, train_lightgbm
+from edf.models.quantile import enforce_monotonic_quantiles
 from edf.models.tuning import tune_lightgbm, walk_forward_cv_folds
 
 DEFAULT_REGISTRY_DIR = Path("models_registry")
@@ -71,6 +87,8 @@ QUANTILE_ALPHAS: tuple[float, ...] = (0.1, 0.5, 0.9)
 BIAS_CORRECTED_HORIZONS: tuple[str, ...] = ("1d",)  # only horizon the recipe is verified for
 CUMULATIVE_DEGREE_WINDOW_PERIODS = 48  # 1 day, notebooks/20's adopted window
 EXTREME_SAMPLE_WEIGHT = 3.0  # notebooks/14's adopted weight for is_hot/is_high_wind/is_christmas
+CQR_CALIBRATION_PERIODS = 48 * 90  # trailing 90 days, notebooks/23's conformal calibration set
+CQR_COVERAGE = 0.8  # nominal [P10, P90] interval, matches notebooks/23
 
 TUNING_N_TRIALS = 8  # kept small: this runs once, locally, per horizon -- not a hot path
 
@@ -104,6 +122,44 @@ def _bias_correction_extras(df: pd.DataFrame, weather: pd.DataFrame) -> tuple[pd
     sample_weight = pd.Series(1.0, index=df.index)
     sample_weight[is_extreme] = EXTREME_SAMPLE_WEIGHT
     return extra, sample_weight
+
+
+def _fit_quantile_models_with_cqr(
+    X: pd.DataFrame,
+    y: pd.Series,
+    calibration_periods: int = CQR_CALIBRATION_PERIODS,
+    coverage: float = CQR_COVERAGE,
+) -> tuple[dict[float, lgb.LGBMRegressor], float, dict[str, object]]:
+    """Fit P10/P50/P90 quantile models on all but a trailing calibration slice, then fit a CQR
+    correction on that slice.
+
+    The trailing `calibration_periods` rows of `X`/`y` are excluded from both tuning and quantile
+    model training entirely, exactly matching `notebooks/23_calibration_robustness_comparison.ipynb`'s
+    split discipline -- letting the calibration set leak into training would invalidate CQR's
+    coverage guarantee (Romano et al. 2019 requires it to be held out, not just unused for that one
+    model). Returns `(quantile_models, cqr_q_hat, quantile_params_metadata)`.
+    """
+    n_calib = min(calibration_periods, len(X) - 1)
+    X_fit, y_fit = X.iloc[:-n_calib], y.iloc[:-n_calib]
+    X_calib, y_calib = X.iloc[-n_calib:], y.iloc[-n_calib:]
+
+    quantile_params, quantile_n_estimators = _tune(X_fit, y_fit)
+
+    quantiles, calib_preds = {}, {}
+    for alpha in QUANTILE_ALPHAS:
+        model = lgb.LGBMRegressor(
+            objective="quantile",
+            alpha=alpha,
+            **{**quantile_params, "n_estimators": quantile_n_estimators},
+        )
+        model.fit(X_fit, y_fit)
+        quantiles[alpha] = model
+        calib_preds[alpha] = pd.Series(model.predict(X_calib), index=X_calib.index)
+
+    calib_fixed = enforce_monotonic_quantiles(calib_preds)
+    q_hat = fit_cqr_correction(y_calib, calib_fixed[0.1], calib_fixed[0.9], coverage=coverage)
+    params_metadata = {**quantile_params, "n_estimators": quantile_n_estimators}
+    return quantiles, q_hat, params_metadata
 
 
 def _tune(X: pd.DataFrame, y: pd.Series) -> tuple[dict[str, object], int]:
@@ -149,16 +205,7 @@ def train_final_models(
             X_point, y, sample_weight=sample_weight, **{**point_params, "n_estimators": point_n_estimators}
         )
 
-        quantile_params, quantile_n_estimators = _tune(X_base, y)
-        quantiles = {}
-        for alpha in QUANTILE_ALPHAS:
-            model = lgb.LGBMRegressor(
-                objective="quantile",
-                alpha=alpha,
-                **{**quantile_params, "n_estimators": quantile_n_estimators},
-            )
-            model.fit(X_base, y)
-            quantiles[alpha] = model
+        quantiles, cqr_q_hat, quantile_params = _fit_quantile_models_with_cqr(X_base, y)
 
         registry[horizon_name] = {
             "point": point_model,
@@ -173,7 +220,10 @@ def train_final_models(
                 "n_training_rows": len(X_base),
                 "weather_source": WEATHER_SOURCE,
                 "point_params": {**point_params, "n_estimators": point_n_estimators},
-                "quantile_params": {**quantile_params, "n_estimators": quantile_n_estimators},
+                "quantile_params": quantile_params,
+                "cqr_q_hat": cqr_q_hat,
+                "cqr_coverage": CQR_COVERAGE,
+                "cqr_calibration_periods": min(CQR_CALIBRATION_PERIODS, len(X_base) - 1),
             },
         }
     return registry

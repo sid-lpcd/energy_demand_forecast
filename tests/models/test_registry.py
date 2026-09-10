@@ -1,3 +1,4 @@
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
@@ -7,7 +8,9 @@ from edf.models.baselines import PERIODS_PER_WEEK
 from edf.models.forecast import train_lightgbm
 from edf.models.registry import (
     DEFAULT_LGBM_PARAMS,
+    QUANTILE_ALPHAS,
     _bias_correction_extras,
+    _fit_quantile_models_with_cqr,
     _tune,
     load_registry,
     save_registry,
@@ -69,6 +72,42 @@ def test_tune_falls_back_to_defaults_when_window_too_short_for_a_cv_fold():
 
     assert params == DEFAULT_LGBM_PARAMS
     assert n_estimators == DEFAULT_LGBM_PARAMS["n_estimators"]
+
+
+def test_fit_quantile_models_with_cqr_returns_one_model_per_alpha_and_a_finite_q_hat():
+    # Long enough to exceed the calibration slice with fit data left over, short enough
+    # (single calendar year) that `_tune` falls back to defaults instead of running a real
+    # walk-forward CV search -- keeps this test fast.
+    n = PERIODS_PER_WEEK * 30
+    df = _canonical_df(n)
+    X, y = build_feature_table(df, horizon_periods=1)
+
+    quantiles, q_hat, params = _fit_quantile_models_with_cqr(X, y, calibration_periods=500)
+
+    assert set(quantiles) == set(QUANTILE_ALPHAS)
+    assert np.isfinite(q_hat)
+    assert params["n_estimators"] == DEFAULT_LGBM_PARAMS["n_estimators"]
+
+
+def test_fit_quantile_models_with_cqr_never_trains_on_the_calibration_tail():
+    n = PERIODS_PER_WEEK * 10
+    df = _canonical_df(n)
+    X, y = build_feature_table(df, horizon_periods=1)
+    calibration_periods = 200
+
+    quantiles, _, params = _fit_quantile_models_with_cqr(
+        X, y, calibration_periods=calibration_periods
+    )
+
+    # A model trained on exactly X's fit-only slice (same deterministic params -- a single
+    # calendar year, so `_tune` always falls back to DEFAULT_LGBM_PARAMS) should predict
+    # identically to what `_fit_quantile_models_with_cqr` returned, proving the calibration
+    # tail was excluded from training, not just unused afterwards.
+    X_fit, y_fit = X.iloc[:-calibration_periods], y.iloc[:-calibration_periods]
+    reference = lgb.LGBMRegressor(objective="quantile", alpha=0.5, **params)
+    reference.fit(X_fit, y_fit)
+
+    np.testing.assert_allclose(quantiles[0.5].predict(X), reference.predict(X))
 
 
 def test_save_and_load_registry_round_trips_predictions(tmp_path):

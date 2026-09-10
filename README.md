@@ -35,6 +35,8 @@ NESO's rolling demand feed, a live Open-Meteo weather forecast, and NESO's curre
 forecast — recomputing a real 30-minute/1-hour/1-day/7-day prediction on every request, not a
 canned demo. See `src/app/live_pipeline.py`'s docstring for the caching/refresh design and
 `src/edf/models/registry.py`'s docstring for exactly which recipe each horizon uses and why.
+The P10/P90 interval shown is conformal-corrected (CQR — see the report's §5 stretch section)
+rather than the raw quantile model's output, which was found badly overconfident.
 
 `/predictions` also shows a trailing-12-months chart (actual demand vs. NDF vs. our blended
 forecast), precomputed by `uv run python -m edf.models.history_comparison` into

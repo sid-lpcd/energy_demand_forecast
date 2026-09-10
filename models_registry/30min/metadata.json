@@ -85,6 +85,9 @@
     "num_leaves": 63,
     "min_child_samples": 20,
     "learning_rate": 0.05,
-    "n_estimators": 576
-  }
+    "n_estimators": 650
+  },
+  "cqr_q_hat": 158.86483258308363,
+  "cqr_coverage": 0.8,
+  "cqr_calibration_periods": 4320
 }
