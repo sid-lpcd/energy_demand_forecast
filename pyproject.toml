@@ -20,6 +20,8 @@ dependencies = [
     "jinja2>=3.1.6",
     "markdown>=3.10.3",
     "python-multipart>=0.0.32",
+    "ngboost>=0.5.11",
+    "scipy>=1.17.1",
 ]
 
 [dependency-groups]

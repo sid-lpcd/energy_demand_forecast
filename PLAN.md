@@ -1023,8 +1023,61 @@ asserting numbers from the debugging session).
 
 ## Stretch (only after Week 8, don't let these creep earlier)
 
-- Compare LightGBM quantile regression against a distributional alternative (e.g. NGBoost or a
-  simple Gaussian-process/conformal-prediction baseline) for calibration robustness.
+- **Done (2026-09-09): compare LightGBM quantile regression against a distributional
+  alternative for calibration robustness — `notebooks/23_calibration_robustness_comparison.ipynb`,
+  `src/edf/models/conformal.py`, `src/edf/models/distributional.py`.** Built both suggested
+  alternatives, not just one: **CQR** (Conformalized Quantile Regression, Romano et al. 2019 —
+  a single scalar correction fit on a held-out calibration set, wraps the existing LightGBM
+  interval) and **NGBoost** (Duan et al. 2019 — natural-gradient boosting of a full per-row Normal
+  distribution, so quantiles come from one coherent CDF instead of N independently-trained models
+  and can't cross by construction). Evaluated on `VALIDATION` (2025, the redefined split), `1d`
+  horizon, ERA5 weather; fit window 2020-2023, calibration window 2024 (held out of training for
+  both models, used only to fit CQR's correction).
+
+  | model | pinball P10 | pinball P50 | pinball P90 | PICP (nom. 80%) | sharpness |
+  |---|---|---|---|---|---|
+  | LightGBM quantile (baseline) | 285.35 | **485.91** | 215.33 | **62.6%** | 2146 MW |
+  | LightGBM + CQR | **250.42** | 485.91 (untouched) | 216.27 | **75.1%** | 2775 MW |
+  | NGBoost | 263.99 | 528.95 | 233.36 | 69.1% | 2643 MW |
+
+  - **The tail-compression problem reproduces on the new split, worse than Week 5's original
+    number** (PICP 62.6% here vs. 65.2% under the old `VALIDATION`=2024 split) — same structural
+    failure (independent per-alpha models, no shared structure to correct the sparse-tail
+    under-extrapolation), different year. Crossing rate 3.6% pre-fix, in line with Week 5's
+    2.6-4.7% range.
+  - **CQR wins this comparison outright.** A single correction (`q_hat`=314.4 MW, fit only on the
+    2024 calibration year, never seen by the LightGBM model during training) lifts PICP from
+    62.6% to 75.1% — most, not all, of the way to nominal 80%, plausibly because 2024-vs-2025
+    isn't perfectly exchangeable (different weather years), which is the one assumption CQR's
+    coverage guarantee actually needs. The cost — a 29% wider interval (2146->2775 MW) — buys a
+    genuine improvement, not just width-for-safety's-sake: lower-tail pinball loss improves too
+    (285.35->250.42), while the upper tail and median (never touched by CQR) stay essentially
+    unchanged. Cheapest possible fix for this project's own diagnosed problem: no retraining, no
+    new dependency beyond the conformal module itself.
+  - **NGBoost is a genuinely different model, but loses on every axis here — the likely cause is
+    compute budget, not the Normal-distribution assumption itself.** Its median forecast is 8.9%
+    worse than LightGBM's (pinball P50 528.95 vs. 485.91): NGBoost's default base learner is a
+    shallow, un-tuned `DecisionTreeRegressor`, nothing like LightGBM's 745-tree,
+    walk-forward-CV-tuned ensemble used everywhere else in this project. Matching that tuning
+    budget wasn't feasible: the entire LightGBM side (10-trial CV search + 11 final quantile fits)
+    finished in ~313s; one 600-estimator NGBoost fit alone took 862s, with calibration-window MAE
+    still improving at 600 with no sign of plateauing (200: 1080, 400: 1014, 600: 977) — a fair
+    tuning pass would cost far more than this comparison's time budget. Its one clean structural
+    win is quantile crossing: exactly 0% by construction (a monotonic CDF per row) vs. LightGBM's
+    3.6% needing a rearrangement patch — but PICP (69.1%) and sharpness (2643 MW) are both
+    simultaneously worse than CQR's, so it's strictly dominated here, not just behind on one
+    metric.
+  - **Decision: adopt CQR as the calibration fix for this project's probabilistic model.** Cheap,
+    keeps the already-tuned point forecast untouched, delivers most of the PICP gain the
+    tail-compression finding called for. NGBoost remains a legitimate distributional alternative
+    in principle (no crossing, tails tied to one coherent fit, could try a skewed/non-Normal
+    `Dist` given this project's own bias findings) but would need a real tuning budget to be a
+    fair fight against a model this project has already spent significant tuning effort on —
+    future work, not a result to claim now.
+  - **Same single-calibration-year caveat as Follow-up 5's H1/H2 finding**: CQR's correction is
+    fit on one year (2024) and applied to one evaluation year (2025) — a deployed version would
+    need periodic recalibration, and the 75.1%-not-80% gap is itself evidence a single year isn't
+    a perfect stand-in for "the same distribution" indefinitely.
 - A literal GB "duck curve" analysis using transmission-scale wind/solar generation (Elexon BMRS
   fuel mix), per the Week 7 note — embedded generation alone can't reconstruct it.
 - **Done (2026-09-08):** a live FastAPI demo (`src/app`) serving real 30min/1h/1d/7d P10/P50/P90
